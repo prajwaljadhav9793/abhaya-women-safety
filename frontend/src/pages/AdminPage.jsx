@@ -261,19 +261,10 @@ export default function AdminPage() {
       Object.entries(newOfficer).forEach(([k, v]) => formData.append(k, v));
       if (newOfficerFile) formData.append("id_proof_file", newOfficerFile);
 
-      const tokenHeader = localStorage.getItem("token")
-        ? { Authorization: `Bearer ${localStorage.getItem("token")}` }
-        : {};
-
-      const res = await fetch("/api/admin/register-officer", {
+      await api("/admin/register-officer", {
         method: "POST",
-        headers: { ...tokenHeader },
-        body: formData
+        form: formData
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to provision authority officer.");
-      }
 
       setFlashMsg(`Officer ${newOfficer.full_name} successfully provisioned with verified ID proof.`);
       setTimeout(() => setFlashMsg(""), 6000);
@@ -294,7 +285,8 @@ export default function AdminPage() {
       reloadUsers();
       if (stats.reload) stats.reload();
     } catch (err) {
-      setOfficerError(err.message || "Failed to provision officer.");
+      const fieldDetails = err.fields ? Object.values(err.fields).join(", ") : "";
+      setOfficerError(fieldDetails ? `${err.message}: ${fieldDetails}` : (err.message || "Failed to provision officer."));
     } finally {
       setOfficerBusy(false);
     }

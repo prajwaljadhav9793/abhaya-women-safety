@@ -1,14 +1,21 @@
 import os
 from datetime import datetime, timedelta
+from sqlalchemy import text
 from app import create_app
 from extensions import db
-from app.models import User, EmergencyContact, IncidentReport
+from app.models import User, EmergencyContact, IncidentReport, OfficerProfile
 
 app = create_app()
 
 def bootstrap():
     with app.app_context():
         db.create_all()
+        # Safe migration for is_active column across SQLite and PostgreSQL
+        try:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         # Seed demo user & admin if not already present
         for email, phone, name, role, pw in [
             ("demo.user@abhaya.test", "+919000000001", "Demo User", "user", os.getenv("DEMO_USER_PASSWORD", "Demo@12345")),

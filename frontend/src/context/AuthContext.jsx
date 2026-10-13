@@ -43,10 +43,16 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const login = (token, userData) => {
+  const login = (token, userData, redirectPath) => {
     localStorage.setItem("abhaya_token", token);
     setUser(userData);
-    navigate("/dashboard");
+    if (redirectPath) {
+      navigate(redirectPath);
+    } else if (userData?.role === "admin") {
+      navigate("/admin");
+    } else {
+      navigate("/dashboard");
+    }
   };
 
   const logout = () => {

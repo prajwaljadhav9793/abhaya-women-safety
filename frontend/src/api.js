@@ -19,8 +19,8 @@ export const BASE = resolveBaseUrl();
 export const tok = () => localStorage.getItem("abhaya_token");
 
 async function raw(path, { method = "GET", body, form } = {}) {
-  const h = {};
-  if (tok()) h.Authorization = "Bearer " + tok();
+  const isPublicAuth = path === "/auth/login" || path === "/auth/register" || path === "/auth/register-officer";
+  if (tok() && !isPublicAuth) h.Authorization = "Bearer " + tok();
   if (body) h["Content-Type"] = "application/json";
 
   const targetUrl = BASE + path;

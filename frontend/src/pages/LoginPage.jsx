@@ -154,28 +154,17 @@ export default function LoginPage({ initialPortal }) {
         formData.append("id_proof_file", idProofFile);
       }
 
-      // Perform direct fetch to pass FormData cleanly
-      const tokenHeader = localStorage.getItem("token")
-        ? { Authorization: `Bearer ${localStorage.getItem("token")}` }
-        : {};
-
-      const res = await fetch("/api/auth/register-officer", {
+      // Use standard api() helper to automatically route to Render backend BASE and handle FormData
+      const data = await api("/auth/register-officer", {
         method: "POST",
-        headers: {
-          ...tokenHeader
-        },
-        body: formData
+        form: formData
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to register authority officer.");
-      }
-
-      login(data.token, data.user);
+      login(data.token, data.user, "/admin");
       navigate("/admin");
     } catch (err) {
-      setError(err.message || "Officer registration failed. Please verify all ID details.");
+      const fieldDetails = err.fields ? Object.values(err.fields).join(", ") : "";
+      setError(fieldDetails ? `${err.message}: ${fieldDetails}` : (err.message || "Officer registration failed. Please verify all ID details."));
     } finally {
       setBusy(false);
     }
