@@ -21,7 +21,8 @@ import AIAssistant from "./AIAssistant.jsx";
 import ReportHazard from "./ReportHazard.jsx";
 import FakeCallCard from "./components/fakecall/FakeCallCard.jsx";
 import FakeCall from "./pages/FakeCall.jsx";
-export { FakeCall };
+import ProfilePage from "./pages/ProfilePage.jsx";
+export { FakeCall, ProfilePage };
 C.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend);
 
 const DEF = [16.705, 74.243];
@@ -1023,15 +1024,8 @@ export function Dashboard() {
     </div>
   );
 }
-export function Profile() {
-  const { user, setUser, logout } = useAuth(), [n, setN] = useState(user.full_name), [ls, setLs] = useState(user.location_sharing_enabled), [m, setM] = useState(""), [pw, setPw] = useState({ current_password: "", new_password: "" });
-  return <><h2>Profile &amp; privacy</h2><div className="card"><Field l="Full name" value={n} onChange={e => setN(e.target.value)} /><p className="mut">{user.email} - {user.phone}</p>
-    <label><input type="checkbox" style={{ width: "auto" }} checked={ls} onChange={e => setLs(e.target.checked)} /> Allow location capture for SOS and journeys. Turn off to stop all sharing.</label><br />
-    <button className="btn" onClick={async () => { try { const d = await api("/auth/profile", { method: "PUT", body: { full_name: n, location_sharing_enabled: ls } }); setUser(d.user); setM("Saved"); } catch (e) { setM(e.message); } }}>Save</button> <span className="ok">{m}</span></div>
-    <div className="card"><b>Change password</b><Field l="Current" type="password" onChange={e => setPw({ ...pw, current_password: e.target.value })} /><Field l="New (8+ chars, letters & numbers)" type="password" onChange={e => setPw({ ...pw, new_password: e.target.value })} />
-      <button className="btn" onClick={async () => { try { await api("/auth/change-password", { method: "POST", body: pw }); setM("Password updated"); } catch (e) { setM(e.message); } }}>Update</button></div>
-    <button className="btn ghost" onClick={logout}>Logout</button></>;
-}
+export const Profile = ProfilePage;
+
 
 /* ---------- contacts ---------- */
 export function Contacts() {

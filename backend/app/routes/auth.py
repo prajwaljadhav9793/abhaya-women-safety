@@ -50,9 +50,19 @@ def me(user): return jsonify(user=user.to_dict())
 @login_required()
 def update_profile(user):
     d = request.get_json(silent=True) or {}
-    if "full_name" in d and len(d["full_name"].strip()) >= 2: user.full_name = d["full_name"].strip()
-    if "location_sharing_enabled" in d: user.location_sharing_enabled = bool(d["location_sharing_enabled"])
-    if d.get("preferred_language") in ("en", "hi", "mr"): user.preferred_language = d["preferred_language"]
+    if "full_name" in d and len(d["full_name"].strip()) >= 2:
+        user.full_name = d["full_name"].strip()
+    if "phone" in d:
+        p = clean_phone(d["phone"])
+        if p and p != user.phone:
+            existing = User.query.filter(User.phone == p, User.id != user.id).first()
+            if existing:
+                return jsonify(error="This mobile number is already registered to another account"), 409
+            user.phone = p
+    if "location_sharing_enabled" in d:
+        user.location_sharing_enabled = bool(d["location_sharing_enabled"])
+    if d.get("preferred_language") in ("en", "hi", "mr"):
+        user.preferred_language = d["preferred_language"]
     db.session.commit()
     return jsonify(user=user.to_dict())
 
