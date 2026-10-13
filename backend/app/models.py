@@ -21,9 +21,12 @@ class User(db.Model):
     def set_password(self, pw): self.password_hash = generate_password_hash(pw)
     def check_password(self, pw): return check_password_hash(self.password_hash, pw)
     def to_dict(self):
-        return dict(id=self.id, full_name=self.full_name, email=self.email, phone=self.phone,
-                    role=self.role, location_sharing_enabled=self.location_sharing_enabled,
-                    preferred_language=self.preferred_language, created_at=self.created_at.isoformat())
+        d = dict(id=self.id, full_name=self.full_name, email=self.email, phone=self.phone,
+                 role=self.role, is_active=self.is_active, location_sharing_enabled=self.location_sharing_enabled,
+                 preferred_language=self.preferred_language, created_at=self.created_at.isoformat())
+        if hasattr(self, "officer_profile") and self.officer_profile:
+            d["officer_profile"] = self.officer_profile.to_dict()
+        return d
 
 class EmergencyContact(db.Model):
     __tablename__ = "emergency_contacts"
@@ -145,3 +148,35 @@ class UserNotification(db.Model):
 class AppSetting(db.Model):
     __tablename__ = "application_settings"
     key = db.Column(db.String(80), primary_key=True); value = db.Column(db.String(500))
+
+class OfficerProfile(db.Model):
+    __tablename__ = "officer_profiles"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    badge_number = db.Column(db.String(80), nullable=False)
+    id_proof_type = db.Column(db.String(80), nullable=False) # Police Service ID, Warrant Card, Govt Identity Card
+    id_proof_number = db.Column(db.String(100), nullable=False)
+    id_proof_filename = db.Column(db.String(255))
+    id_proof_original_name = db.Column(db.String(255))
+    department = db.Column(db.String(120), nullable=False) # e.g. Cyber Crime Cell, Shahupuri Precinct
+    designation = db.Column(db.String(100), nullable=False) # e.g. Police Sub-Inspector, DSP
+    verified = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=now)
+
+    user = db.relationship("User", backref=db.backref("officer_profile", uselist=False, cascade="all, delete-orphan"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "badge_number": self.badge_number,
+            "id_proof_type": self.id_proof_type,
+            "id_proof_number": self.id_proof_number,
+            "id_proof_filename": self.id_proof_filename,
+            "id_proof_original_name": self.id_proof_original_name,
+            "department": self.department,
+            "designation": self.designation,
+            "verified": self.verified,
+            "created_at": self.created_at.isoformat()
+        }
+

@@ -30,7 +30,10 @@ import {
   SlidersHorizontal,
   ChevronRight,
   Activity,
-  AlertCircle
+  AlertCircle,
+  UserPlus,
+  UploadCloud,
+  FileCheck2
 } from "lucide-react";
 import { api, useLoad, download } from "../api.js";
 import { useAuth, Tag } from "../context/AuthContext.jsx";
@@ -210,6 +213,90 @@ export default function AdminPage() {
       reloadUsers();
     } catch (err) {
       alert(err.message || "Failed to toggle user status.");
+    }
+  };
+
+  // State for provisioning new officer with ID proof
+  const [createOfficerModalOpen, setCreateOfficerModalOpen] = useState(false);
+  const [newOfficer, setNewOfficer] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    badge_number: "",
+    department: "Shahupuri Police Precinct, Kolhapur",
+    designation: "Police Sub-Inspector (PSI)",
+    id_proof_type: "Police Warrant Card / Service ID",
+    id_proof_number: "",
+    password: "",
+    confirm_password: ""
+  });
+  const [newOfficerFile, setNewOfficerFile] = useState(null);
+  const [officerBusy, setOfficerBusy] = useState(false);
+  const [officerError, setOfficerError] = useState("");
+
+  const handleCreateOfficerSubmit = async (e) => {
+    e.preventDefault();
+    setOfficerError("");
+
+    if (!newOfficer.full_name || !newOfficer.email || !newOfficer.phone) {
+      setOfficerError("Please enter full name, email, and mobile number.");
+      return;
+    }
+    if (!newOfficer.badge_number || !newOfficer.id_proof_number) {
+      setOfficerError("Officer badge number and ID proof credential number are mandatory.");
+      return;
+    }
+    if (!newOfficer.password || newOfficer.password.length < 8) {
+      setOfficerError("Password must be at least 8 characters with letters & numbers.");
+      return;
+    }
+    if (newOfficer.password !== newOfficer.confirm_password) {
+      setOfficerError("Passwords do not match.");
+      return;
+    }
+
+    setOfficerBusy(true);
+    try {
+      const formData = new FormData();
+      Object.entries(newOfficer).forEach(([k, v]) => formData.append(k, v));
+      if (newOfficerFile) formData.append("id_proof_file", newOfficerFile);
+
+      const tokenHeader = localStorage.getItem("token")
+        ? { Authorization: `Bearer ${localStorage.getItem("token")}` }
+        : {};
+
+      const res = await fetch("/api/admin/register-officer", {
+        method: "POST",
+        headers: { ...tokenHeader },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to provision authority officer.");
+      }
+
+      setFlashMsg(`Officer ${newOfficer.full_name} successfully provisioned with verified ID proof.`);
+      setTimeout(() => setFlashMsg(""), 6000);
+      setCreateOfficerModalOpen(false);
+      setNewOfficer({
+        full_name: "",
+        email: "",
+        phone: "",
+        badge_number: "",
+        department: "Shahupuri Police Precinct, Kolhapur",
+        designation: "Police Sub-Inspector (PSI)",
+        id_proof_type: "Police Warrant Card / Service ID",
+        id_proof_number: "",
+        password: "",
+        confirm_password: ""
+      });
+      setNewOfficerFile(null);
+      reloadUsers();
+      if (stats.reload) stats.reload();
+    } catch (err) {
+      setOfficerError(err.message || "Failed to provision officer.");
+    } finally {
+      setOfficerBusy(false);
     }
   };
 
@@ -1538,17 +1625,37 @@ export default function AdminPage() {
                 Active safety accounts, emergency contacts linkage, and security clearance controls.
               </p>
             </div>
-            <span
-              style={{
-                fontSize: "0.75rem",
-                color: "#94a3b8",
-                background: "rgba(255,255,255,0.06)",
-                padding: "4px 10px",
-                borderRadius: 6
-              }}
-            >
-              Total Registered: {usersData?.total ?? 0}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => setCreateOfficerModalOpen(true)}
+                style={{
+                  background: "linear-gradient(135deg, #1d4ed8, #0284c7)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: "0.82rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "none",
+                  boxShadow: "0 2px 10px rgba(29, 78, 216, 0.4)"
+                }}
+              >
+                <UserPlus size={15} /> + Provision Officer (with ID Proof)
+              </button>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "#94a3b8",
+                  background: "rgba(255,255,255,0.06)",
+                  padding: "6px 10px",
+                  borderRadius: 6
+                }}
+              >
+                Total Registered: {usersData?.total ?? 0}
+              </span>
+            </div>
           </div>
 
           {usersErr && <div style={{ color: "#f87171" }}>{usersErr}</div>}
@@ -1563,10 +1670,11 @@ export default function AdminPage() {
                 <thead>
                   <tr>
                     <th>User ID</th>
-                    <th>Full Name</th>
+                    <th>Full Name &amp; Designation</th>
                     <th>Email Address</th>
                     <th>Mobile Phone</th>
                     <th>Role</th>
+                    <th>Official ID Proof</th>
                     <th>Account Status</th>
                     <th style={{ textAlign: "right" }}>Clearance Control</th>
                   </tr>
@@ -1575,7 +1683,17 @@ export default function AdminPage() {
                   {usersData.items.map((u) => (
                     <tr key={u.id}>
                       <td>#{u.id}</td>
-                      <td><b>{u.full_name}</b></td>
+                      <td>
+                        <div><b>{u.full_name}</b></div>
+                        {u.officer_profile ? (
+                          <div style={{ fontSize: "0.75rem", color: "#93c5fd", marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ background: "rgba(59, 130, 246, 0.2)", padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>
+                              Badge: #{u.officer_profile.badge_number}
+                            </span>
+                            <span>{u.officer_profile.designation} &bull; {u.officer_profile.department}</span>
+                          </div>
+                        ) : null}
+                      </td>
                       <td>{u.email}</td>
                       <td>{u.phone ? `+91 ${u.phone}` : "-"}</td>
                       <td>
@@ -1591,6 +1709,28 @@ export default function AdminPage() {
                         >
                           {u.role === "admin" ? "POLICE / ADMIN" : "CITIZEN"}
                         </span>
+                      </td>
+                      <td>
+                        {u.officer_profile ? (
+                          <div style={{ fontSize: "0.75rem" }}>
+                            <span style={{ color: "#4ade80", fontWeight: 700 }}>✓ Verified ID</span>
+                            <div className="mut" style={{ fontSize: "0.72rem" }}>
+                              {u.officer_profile.id_proof_type} ({u.officer_profile.id_proof_number})
+                            </div>
+                            {u.officer_profile.id_proof_filename && (
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                onClick={() => download(`/admin/officers/${u.id}/id-proof`, u.officer_profile.id_proof_original_name || `officer_id_${u.id}.pdf`)}
+                                style={{ padding: "2px 6px", fontSize: "0.7rem", marginTop: 3, borderColor: "rgba(59, 130, 246, 0.4)", color: "#93c5fd", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                <Download size={11} /> View ID Proof
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Citizen / Standard</span>
+                        )}
                       </td>
                       <td>
                         <span
@@ -2025,6 +2165,338 @@ export default function AdminPage() {
                 {reviewModal.busy ? "Recording Decision..." : "Confirm & Save Decision"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ============================================================== */}
+      {/* PROVISION OFFICER ACCOUNT MODAL (WITH ID PROOF)                 */}
+      {/* ============================================================== */}
+      {createOfficerModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16
+          }}
+          onClick={() => setCreateOfficerModalOpen(false)}
+        >
+          <div
+            style={{
+              background: "#0f172a",
+              border: "1px solid rgba(59, 130, 246, 0.4)",
+              borderRadius: 18,
+              padding: "24px 26px",
+              width: "100%",
+              maxWidth: 580,
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 25px 50px rgba(0, 0, 0, 0.8)",
+              color: "#fff"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                paddingBottom: 12
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <ShieldCheck size={24} color="#60a5fa" />
+                <h3 style={{ margin: 0, fontSize: "1.2rem" }}>
+                  Provision Law Enforcement Officer Account
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateOfficerModalOpen(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  padding: 4
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: "rgba(59, 130, 246, 0.1)",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                borderRadius: 10,
+                padding: "10px 12px",
+                marginBottom: 16,
+                fontSize: "0.78rem",
+                color: "#bfdbfe"
+              }}
+            >
+              <b>Official Verification Requirement:</b> Provisioned officers must supply government/precinct identification proof before obtaining administrative authority clearance.
+            </div>
+
+            <form onSubmit={handleCreateOfficerSubmit}>
+              {/* Name & Email */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Officer Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ramesh Patil"
+                    value={newOfficer.full_name}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, full_name: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Official Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="officer@police.gov.in"
+                    value={newOfficer.email}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, email: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+              </div>
+
+              {/* Mobile & Badge */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Mobile Number (10 digits) *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="9876543210"
+                    value={newOfficer.phone}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, phone: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Officer Badge / Service ID *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. MH-KOP-4921"
+                    value={newOfficer.badge_number}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, badge_number: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(59,130,246,0.4)", background: "rgba(30,58,138,0.25)", color: "#60a5fa", fontWeight: 700, fontSize: "0.85rem" }}
+                  />
+                </div>
+              </div>
+
+              {/* Designation & Department */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Rank / Designation *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Police Sub-Inspector / DSP"
+                    value={newOfficer.designation}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, designation: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Police Precinct / Department *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Shahupuri Police Precinct"
+                    value={newOfficer.department}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, department: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+              </div>
+
+              {/* ID Proof Type & Number */}
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Official ID Proof Type *
+                  </label>
+                  <select
+                    value={newOfficer.id_proof_type}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, id_proof_type: e.target.value })}
+                    style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(15,23,42,0.9)", color: "#fff", fontSize: "0.85rem" }}
+                  >
+                    <option value="Police Warrant Card / Service ID">Police Warrant Card / Service ID</option>
+                    <option value="Government Law Enforcement ID">Government Law Enforcement ID</option>
+                    <option value="Ministry of Home Affairs Credential">Ministry of Home Affairs Credential</option>
+                    <option value="Official Service Aadhaar Card">Official Service Aadhaar Card</option>
+                    <option value="State Police Department ID">State Police Department ID</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    ID Credential Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="WARR-2024-8841"
+                    value={newOfficer.id_proof_number}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, id_proof_number: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+              </div>
+
+              {/* ID Proof Document File Upload */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  Upload ID Proof Document / Photo (PDF, PNG, JPG)
+                </label>
+                <div
+                  style={{
+                    border: "2px dashed rgba(59, 130, 246, 0.4)",
+                    borderRadius: 10,
+                    padding: "12px 14px",
+                    textAlign: "center",
+                    background: "rgba(0, 0, 0, 0.3)",
+                    position: "relative",
+                    cursor: "pointer"
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept=".pdf,image/png,image/jpeg,image/jpg"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setNewOfficerFile(e.target.files[0]);
+                      }
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      opacity: 0,
+                      cursor: "pointer",
+                      width: "100%",
+                      height: "100%"
+                    }}
+                  />
+                  <UploadCloud size={20} style={{ color: "#60a5fa", margin: "0 auto 4px" }} />
+                  <div style={{ fontSize: "0.82rem", color: "#e2e8f0", fontWeight: 600 }}>
+                    {newOfficerFile ? (
+                      <span style={{ color: "#4ade80" }}>
+                        ✓ {newOfficerFile.name} ({Math.round(newOfficerFile.size / 1024)} KB)
+                      </span>
+                    ) : (
+                      <span>Attach scanned warrant card, service ID or photo credential</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Passwords */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Temporary Password *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Min 8 chars"
+                    value={newOfficer.password}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, password: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                    Confirm Password *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Re-enter password"
+                    value={newOfficer.confirm_password}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, confirm_password: e.target.value })}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  />
+                </div>
+              </div>
+
+              {officerError && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    background: "rgba(239, 68, 68, 0.2)",
+                    border: "1px solid rgba(239, 68, 68, 0.4)",
+                    borderRadius: 6,
+                    color: "#fca5a5",
+                    fontSize: "0.8rem",
+                    marginBottom: 14
+                  }}
+                >
+                  {officerError}
+                </div>
+              )}
+
+              {/* Modal Buttons */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setCreateOfficerModalOpen(false)}
+                  disabled={officerBusy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn sm"
+                  disabled={officerBusy}
+                  style={{
+                    background: "linear-gradient(135deg, #1d4ed8, #0284c7)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    padding: "8px 18px",
+                    border: "none",
+                    boxShadow: "0 2px 10px rgba(29, 78, 216, 0.4)"
+                  }}
+                >
+                  {officerBusy ? "Provisioning Officer..." : "✓ Confirm & Provision Officer"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
