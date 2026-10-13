@@ -358,6 +358,7 @@ export default function SafeRouteIntelligence() {
     navigator.geolocation.getCurrentPosition(
       pos => {
         const pt = [pos.coords.latitude, pos.coords.longitude];
+        try { localStorage.setItem("abhaya_last_coords", JSON.stringify({ lat: pt[0], lng: pt[1], timestamp: Date.now() })); } catch (e) {}
         if (!isWithinIndia(pt[0], pt[1])) {
           setGpsLoading(false);
           setErrorMessage(

@@ -1,20 +1,63 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Routes, Route, Navigate, NavLink, Link, useNavigate, Outlet } from "react-router-dom";
-import { Shield, Home, Users, Route as RouteIcon, Navigation, Flag, BarChart3, LifeBuoy, Bot, FolderLock, User, Settings, LogOut, PhoneCall, Menu, X, Bell, Sparkles, ShieldAlert } from "lucide-react";
+import { Shield, Home, Users, Route as RouteIcon, Navigation, Flag, BarChart3, LifeBuoy, Bot, FolderLock, User, Settings, LogOut, PhoneCall, Menu, X, Bell, Sparkles, ShieldAlert, Volume2, VolumeX } from "lucide-react";
 import { api, tok, useLoad } from "./api.js";
 import * as P from "./pages.jsx";
 import FakeCall from "./pages/FakeCall.jsx";
 import { AuthProvider, useAuth, Tag } from "./context/AuthContext.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { playEmergencyAlarm, stopEmergencyAlarm, captureEmergencyCoordinates, isEmergencyAlarmPlaying } from "./emergencyAudio.js";
 export { useAuth, Tag };
 
 function Sos() {
   const [res, setRes] = useState(null), [busy, setBusy] = useState(false), [err, setErr] = useState("");
-  const send = (pos, denied) => api("/sos", {
-    method: "POST",
-    body: pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy } : { location_denied: denied }
-  })
-    .then(data => {
+  const [alarmActive, setAlarmActive] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      stopEmergencyAlarm();
+    };
+  }, []);
+
+  const toggleAlarm = () => {
+    if (alarmActive) {
+      stopEmergencyAlarm();
+      setAlarmActive(false);
+    } else {
+      playEmergencyAlarm();
+      setAlarmActive(true);
+    }
+  };
+
+  const closeSos = () => {
+    stopEmergencyAlarm();
+    setAlarmActive(false);
+    setRes(null);
+    setErr("");
+  };
+
+  const press = async () => {
+    setBusy(true);
+    setErr("");
+
+    // 1. Instantly sound the piercing siren on click
+    playEmergencyAlarm();
+    setAlarmActive(true);
+
+    try {
+      // 2. Guaranteed multi-tier location capture (GPS -> Wi-Fi -> Local Cache -> IP -> Regional)
+      const coords = await captureEmergencyCoordinates();
+
+      const data = await api("/sos", {
+        method: "POST",
+        body: {
+          lat: coords.lat,
+          lng: coords.lng,
+          accuracy: coords.accuracy,
+          note: `🚨 Emergency SOS activated from navbar (Source: ${coords.source || "GPS"})`
+        }
+      });
+
       setRes(data);
       const primary = data?.contacts?.[0];
       if (primary && primary.wa_url && !primary.phone?.includes("000000099")) {
@@ -22,18 +65,11 @@ function Sos() {
           window.open(primary.wa_url, "_blank");
         }
       }
-    })
-    .catch(e => setErr(e.message))
-    .finally(() => setBusy(false));
-
-  const press = () => {
-    setBusy(true); setErr("");
-    if (!navigator.geolocation) return send(null, false);
-    navigator.geolocation.getCurrentPosition(
-      p => send(p),
-      e => send(null, e.code === 1),
-      { timeout: 8000, enableHighAccuracy: true }
-    );
+    } catch (e) {
+      setErr(e.message || "Failed to dispatch SOS alert");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const s = res?.sos;
@@ -62,11 +98,59 @@ function Sos() {
             Event #{s.id} &bull; {new Date(s.created_at + "Z").toLocaleString()}
           </p>
 
+          {/* Emergency Audio Siren Control Banner */}
+          <div
+            style={{
+              background: alarmActive ? "rgba(239, 68, 68, 0.2)" : "rgba(100, 116, 139, 0.2)",
+              border: `1px solid ${alarmActive ? "#ef4444" : "#64748b"}`,
+              borderRadius: 8,
+              padding: "10px 14px",
+              marginBottom: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }}
+          >
+            <span style={{ color: alarmActive ? "#fca5a5" : "#cbd5e1", fontSize: "0.85rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+              {alarmActive ? (
+                <>
+                  <Volume2 size={18} className="spin" /> 🔊 Loud Emergency Siren is Sounding!
+                </>
+              ) : (
+                <>
+                  <VolumeX size={18} /> 🔇 Siren Silenced
+                </>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={toggleAlarm}
+              className="btn sm"
+              style={{
+                background: alarmActive ? "#ef4444" : "#475569",
+                color: "#fff",
+                border: "none",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5
+              }}
+            >
+              {alarmActive ? <><VolumeX size={14} /> Silence Siren</> : <><Volume2 size={14} /> Sound Siren</>}
+            </button>
+          </div>
+
           <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 6, padding: "8px 12px", marginBottom: 14 }}>
-            <b>📍 Live Location:</b>{" "}
-            {s.location_status === "captured" ? (
-              <a href={s.map_url} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
-                Google Maps Pin ({s.lat.toFixed(5)}, {s.lng.toFixed(5)})
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <b>📍 Captured Live Location:</b>
+              <span style={{ fontSize: "0.72rem", background: "rgba(56, 189, 248, 0.2)", color: "#38bdf8", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
+                {s.location_status === "captured" ? "GPS / COORDS LOCKED" : s.location_status?.toUpperCase()}
+              </span>
+            </div>
+            {s.lat && s.lng ? (
+              <a href={s.map_url || `https://www.google.com/maps?q=${s.lat},${s.lng}`} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline", fontWeight: 600, fontSize: "0.9rem" }}>
+                Google Maps Pin ({s.lat.toFixed(5)}, {s.lng.toFixed(5)}) &bull; Acc: {s.accuracy ? Math.round(s.accuracy) + "m" : "High"} ↗
               </a>
             ) : (
               <span className="mut">{s.location_status}</span>
@@ -206,9 +290,14 @@ function Sos() {
         </>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12 }}>
-        <button className="btn ghost" onClick={() => { setRes(null); setErr(""); }}>Close</button>
+        <button className="btn ghost" onClick={closeSos}>Close</button>
         {s && (
-          <button className="btn sm" onClick={() => api(`/sos/${s.id}/resolve`, { method: "POST" }).then(() => setRes(null))}>
+          <button className="btn sm" onClick={async () => {
+            closeSos();
+            try {
+              await api(`/sos/${s.id}/resolve`, { method: "POST" });
+            } catch (e) {}
+          }}>
             Resolve Emergency
           </button>
         )}

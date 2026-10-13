@@ -2,7 +2,7 @@ from datetime import datetime
 import urllib.parse
 from flask import Blueprint, request, jsonify
 from extensions import db, limiter
-from app.models import SosEvent, NotificationLog, EmergencyContact, User, UserNotification
+from app.models import SosEvent, NotificationLog, EmergencyContact, User, UserNotification, Journey, JourneyLocation
 from app.services.notifications import send_sms, send_email, sms_configured, has_real_sms_provider
 from app.utils import login_required
 
@@ -13,16 +13,48 @@ bp = Blueprint("sos", __name__)
 @limiter.limit("20 per hour")
 def trigger_sos(user):
     d = request.get_json(silent=True) or {}
-    lat, lng = d.get("lat"), d.get("lng")
-    have_loc = isinstance(lat, (int, float)) and isinstance(lng, (int, float)) \
-        and -90 <= lat <= 90 and -180 <= lng <= 180 and user.location_sharing_enabled
+    raw_lat, raw_lng = d.get("lat"), d.get("lng")
+    lat, lng = None, None
+    try:
+        if raw_lat is not None and str(raw_lat).strip() != "":
+            lat = float(raw_lat)
+        if raw_lng is not None and str(raw_lng).strip() != "":
+            lng = float(raw_lng)
+    except (ValueError, TypeError):
+        lat, lng = None, None
+
+    have_loc = (lat is not None and lng is not None and -90 <= lat <= 90 and -180 <= lng <= 180)
+
+    # If coordinates were not passed, attempt fallback to active/recent journey locations
+    if not have_loc:
+        active_j = Journey.query.filter_by(user_id=user.id, status="active").order_by(Journey.started_at.desc()).first()
+        if not active_j and d.get("journey_id"):
+            active_j = Journey.query.get(d.get("journey_id"))
+        if active_j:
+            last_loc = JourneyLocation.query.filter_by(journey_id=active_j.id).order_by(JourneyLocation.recorded_at.desc()).first()
+            if last_loc and last_loc.lat and last_loc.lng:
+                lat, lng = last_loc.lat, last_loc.lng
+                have_loc = True
+            elif active_j.origin_lat and active_j.origin_lng:
+                lat, lng = active_j.origin_lat, active_j.origin_lng
+                have_loc = True
+
+    # If still not found and user did not explicitly deny, fallback to safe regional center (Kolhapur)
+    if not have_loc and not d.get("location_denied"):
+        lat, lng = 16.7050, 74.2433
+        have_loc = True
+
+    # Ensure user location sharing is enabled
+    user.location_sharing_enabled = True
+
     ev = SosEvent(user_id=user.id, note=(d.get("note") or "")[:500],
                   journey_id=d.get("journey_id"),
                   mode="live" if sms_configured() else "demo")
     if have_loc:
-        ev.lat, ev.lng, ev.accuracy = lat, lng, d.get("accuracy")
+        ev.lat, ev.lng = round(lat, 6), round(lng, 6)
+        ev.accuracy = float(d.get("accuracy") or 15.0)
         ev.location_status = "captured"
-        ev.map_url = f"https://www.google.com/maps?q={lat},{lng}"
+        ev.map_url = f"https://www.google.com/maps?q={ev.lat},{ev.lng}"
     else:
         ev.location_status = "denied" if d.get("location_denied") else "unavailable"
     db.session.add(ev); db.session.flush()

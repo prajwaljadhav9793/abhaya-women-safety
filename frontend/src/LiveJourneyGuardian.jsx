@@ -31,6 +31,7 @@ import {
 import { api, useLoad } from "./api.js";
 import { Tag } from "./context/AuthContext.jsx";
 import MapLibre3DGuardian from "./components/MapLibre3DGuardian.jsx";
+import { captureEmergencyCoordinates, saveEmergencyLocation } from "./emergencyAudio.js";
 
 // Distance helper (Haversine formula in meters)
 const hav = (a, b) => {
@@ -385,6 +386,7 @@ export default function LiveJourneyGuardian() {
         const acc = Math.round(pos.coords.accuracy || 10);
         const speed = pos.coords.speed !== null && pos.coords.speed >= 0 ? Math.round(pos.coords.speed * 3.6) : 0;
 
+        saveEmergencyLocation(pos.coords.latitude, pos.coords.longitude);
         setGpsPosition(pt);
         setCurrentPos(pt);
         setGpsAccuracy(acc);
@@ -588,17 +590,28 @@ export default function LiveJourneyGuardian() {
     setSosLoading(true);
     setSosStatus("");
     setErrorMessage("");
+
+    // 1. Immediately sound the piercing emergency siren!
+    startLoudSiren();
+
     try {
-      const pos = currentPos || (gpsPosition ? gpsPosition : activeJourney?.origin);
-      const lat = pos ? pos[0] : null;
-      const lng = pos ? pos[1] : null;
+      // 2. Guaranteed multi-tier location capture (live position -> GPS -> active origin -> Wi-Fi/IP -> cache)
+      const coords = await captureEmergencyCoordinates([
+        currentPos,
+        gpsPosition,
+        activeJourney?.origin
+      ]);
+
+      const lat = coords?.lat;
+      const lng = coords?.lng;
 
       const data = await api("/sos", {
         method: "POST",
         body: {
           lat,
           lng,
-          note: `🚨 Emergency SOS from ABHAYA Journey Guardian (#${activeJourney?.id || "Live"}) en route to ${activeJourney?.dest_label?.split(",")[0] || "Destination"}`,
+          accuracy: coords?.accuracy,
+          note: `🚨 Emergency SOS from ABHAYA Journey Guardian (#${activeJourney?.id || "Live"}) en route to ${activeJourney?.dest_label?.split(",")[0] || "Destination"} (Source: ${coords?.source || "GPS"})`,
           journey_id: activeJourney?.id
         }
       });

@@ -281,6 +281,7 @@ export default function ReportHazard() {
       pos => {
         const curLat = Number(pos.coords.latitude.toFixed(6));
         const curLng = Number(pos.coords.longitude.toFixed(6));
+        try { localStorage.setItem("abhaya_last_coords", JSON.stringify({ lat: curLat, lng: curLng, timestamp: Date.now() })); } catch (e) {}
         setLat(curLat);
         setLng(curLng);
         if (!locationLabel) {
