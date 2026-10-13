@@ -430,6 +430,35 @@ function Shell() {
 
       {/* Global Floating SOS Trigger */}
       <Sos />
+
+      {/* Mobile Native App Style Bottom Navigation Bar */}
+      <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
+        <NavLink to="/dashboard" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+          <Home size={19} />
+          <span>Home</span>
+        </NavLink>
+        <NavLink to="/routes" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+          <RouteIcon size={19} />
+          <span>Routes</span>
+        </NavLink>
+        <NavLink to="/journey" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+          <Navigation size={19} />
+          <span>Journey</span>
+        </NavLink>
+        <NavLink to="/nearby" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+          <LifeBuoy size={19} />
+          <span>Nearby</span>
+        </NavLink>
+        <button 
+          type="button" 
+          className="mob-tab" 
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open Navigation Drawer"
+        >
+          <Menu size={19} />
+          <span>Menu</span>
+        </button>
+      </nav>
     </div>
   );
 }

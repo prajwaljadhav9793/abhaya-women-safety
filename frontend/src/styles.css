@@ -3935,3 +3935,405 @@ td, th {
   color: #64748b;
   padding: 0 6px;
 }
+
+/* ==========================================================================
+   MOBILE FIRST & ENHANCED RESPONSIVE SYSTEM (UI & ACCESSIBILITY OVERHAUL)
+   ========================================================================== */
+
+/* Mobile Bottom Navigation Bar (Hidden on Desktop) */
+.mobile-bottom-nav {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   TABLET & PHONE RESPONSIVE BREAKPOINT (<= 860px)
+   -------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  /* Layout & Viewport */
+  body {
+    font-size: 14.5px;
+  }
+
+  .shell {
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .main {
+    padding: 14px 12px 140px !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Fixed Top Header for Logged-in App */
+  .mobile-header {
+    display: flex !important;
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    padding: 10px 14px;
+    background: rgba(8, 12, 30, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.25);
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .mobile-toggle-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  /* Native Mobile Bottom Navigation Bar */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 62px;
+    background: rgba(9, 13, 32, 0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(139, 92, 246, 0.3);
+    z-index: 1040;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 4px;
+    padding-bottom: env(safe-area-inset-bottom, 2px);
+    box-shadow: 0 -4px 25px rgba(0, 0, 0, 0.6);
+  }
+
+  .mob-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex: 1;
+    height: 100%;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 0.68rem;
+    font-weight: 600;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    padding: 6px 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mob-tab.active,
+  .mob-tab:hover {
+    color: #c084fc;
+  }
+
+  .mob-tab.active svg {
+    color: #c084fc;
+    filter: drop-shadow(0 0 8px rgba(192, 132, 252, 0.7));
+    transform: translateY(-2px);
+  }
+
+  /* Sliding Drawer Sidebar on Mobile */
+  .side {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 290px !important;
+    max-width: 82vw !important;
+    height: 100vh !important;
+    z-index: 1200 !important;
+    transform: translateX(-100%) !important;
+    box-shadow: 14px 0 40px rgba(0, 0, 0, 0.85) !important;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    background: #090e24 !important;
+    padding: 16px 14px !important;
+    overflow-y: auto !important;
+  }
+
+  .side.side-mobile-open {
+    transform: translateX(0) !important;
+  }
+
+  .side-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    z-index: 1190;
+  }
+
+  /* Floating SOS Button on Mobile (Placed cleanly above the bottom bar) */
+  .sos {
+    bottom: 74px !important;
+    right: 14px !important;
+    width: 64px !important;
+    height: 64px !important;
+    font-size: 1.15rem !important;
+    border-width: 2.5px !important;
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.95), 0 0 50px rgba(239, 68, 68, 0.45) !important;
+  }
+
+  /* Cards and Padding on Mobile */
+  .card {
+    padding: 15px 13px !important;
+    border-radius: 14px !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Form Elements: Prevent iOS Auto-Zoom */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important; /* Disables unwanted iOS Safari auto-zoom */
+    padding: 12px 14px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Buttons Touch Target */
+  .btn {
+    min-height: 42px;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn.sm {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  /* Tables: Horizontal Scroll Containers */
+  table {
+    min-width: 520px;
+    font-size: 0.82rem !important;
+  }
+  
+  td, th {
+    padding: 8px 8px !important;
+  }
+
+  .table-responsive,
+  div:has(> table) {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    margin-bottom: 12px;
+    border-radius: 8px;
+  }
+
+  /* Dashboard: 2x2 App Grid for Stats */
+  .dash-stats-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .dash-stat-card {
+    padding: 14px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .stat-card-value {
+    font-size: 1.45rem !important;
+  }
+
+  .dash-feature-tiles-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .dash-feature-tile {
+    padding: 14px 13px !important;
+  }
+
+  .dash-header-banner {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .dash-header-actions {
+    width: 100% !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  .dash-header-actions .btn {
+    flex: 1 !important;
+    justify-content: center !important;
+  }
+
+  .dash-readiness-banner {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .dash-readiness-banner .btn {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Nearby Help Module on Mobile */
+  .nearby-main-split {
+    grid-template-columns: 1fr !important;
+  }
+
+  .card-actions-toolbar {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .card-actions-toolbar .btn-action {
+    justify-content: center !important;
+    font-size: 0.82rem !important;
+  }
+
+  /* Live Journey Guardian & Safe Routes */
+  .map,
+  .leaflet-container {
+    height: 380px !important;
+    border-radius: 12px !important;
+  }
+
+  /* Modals: Responsive Bottom Sheet / Centered Card */
+  .modal {
+    padding: 8px !important;
+    align-items: flex-end !important;
+  }
+
+  .modal .card {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 12px 12px !important;
+    max-height: 86vh !important;
+    overflow-y: auto !important;
+    padding: 16px 14px !important;
+    margin: 0 !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   STANDARD SMARTPHONE BREAKPOINT (<= 640px)
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  /* Landing Hero */
+  .landing-hero-section {
+    padding: 30px 14px 40px !important;
+  }
+
+  .hero-main-title {
+    font-size: 1.85rem !important;
+    line-height: 1.25 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  .hero-description-text {
+    font-size: 0.88rem !important;
+    margin-bottom: 20px !important;
+  }
+
+  .hero-cta-bar {
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .hero-cta-bar a,
+  .hero-cta-bar button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .hero-demo-strip {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  .demo-strip-buttons {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .demo-pill-btn {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .portal-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .helplines-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   COMPACT SMARTPHONE BREAKPOINT (<= 400px)
+   -------------------------------------------------------------------------- */
+@media (max-width: 400px) {
+  .hero-main-title {
+    font-size: 1.65rem !important;
+  }
+
+  .dash-stats-row {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .dash-stat-card {
+    padding: 10px 8px !important;
+  }
+
+  .stat-card-title {
+    font-size: 0.72rem !important;
+  }
+
+  .stat-card-value {
+    font-size: 1.25rem !important;
+  }
+
+  .sos {
+    bottom: 70px !important;
+    right: 10px !important;
+    width: 58px !important;
+    height: 58px !important;
+    font-size: 1.05rem !important;
+  }
+
+  .mobile-bottom-nav {
+    height: 58px !important;
+  }
+
+  .mob-tab span {
+    font-size: 0.62rem !important;
+  }
+}
