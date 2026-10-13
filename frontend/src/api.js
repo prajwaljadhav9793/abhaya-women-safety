@@ -54,15 +54,21 @@ export async function api(path, opt) {
   try {
     d = rawText ? JSON.parse(rawText) : {};
   } catch (e) {
+    const isVercelHost = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
+    if (r.status === 405 || BASE === "/api" || isVercelHost) {
+      throw new Error(
+        "Backend API is not connected! Vercel only hosts the frontend. Please deploy the Python backend on Render.com and set VITE_API_URL in Vercel Project Settings."
+      );
+    }
     if (rawText.includes("<!DOCTYPE") || rawText.includes("<html")) {
-      const isVercelHost = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
-      if (BASE === "/api" && isVercelHost) {
-        throw new Error(
-          "Backend API URL is not configured on Vercel. Please set VITE_API_URL in your Vercel Project Settings (Environment Variables) to your deployed backend URL, then click Redeploy."
-        );
-      }
       throw new Error(`Server returned HTML (status ${r.status}) instead of JSON. The backend service may still be booting.`);
     }
+  }
+
+  if (r.status === 405) {
+    throw new Error(
+      "Backend API is not connected (405)! Vercel only hosts the frontend. Please deploy the Python backend on Render.com and set VITE_API_URL in Vercel Project Settings."
+    );
   }
 
   if (!r.ok) {
