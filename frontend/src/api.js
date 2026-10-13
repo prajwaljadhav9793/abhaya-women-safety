@@ -1,14 +1,43 @@
 import { useEffect, useState, useCallback } from "react";
-export const BASE = import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== "" ? import.meta.env.VITE_API_URL : "/api";
+
+// Robust BASE URL resolver:
+// 1. Reads VITE_API_URL from environment
+// 2. Strips trailing slashes
+// 3. Automatically appends '/api' if host was supplied without it (e.g. https://xyz.onrender.com -> https://xyz.onrender.com/api)
+// 4. Defaults to '/api' for local proxy or same-domain hosting
+const resolveBaseUrl = () => {
+  let envUrl = (import.meta.env.VITE_API_URL || "").trim();
+  if (!envUrl) return "/api";
+  envUrl = envUrl.replace(/\/+$/, "");
+  if (envUrl.startsWith("http") && !envUrl.endsWith("/api")) {
+    envUrl += "/api";
+  }
+  return envUrl;
+};
+
+export const BASE = resolveBaseUrl();
 export const tok = () => localStorage.getItem("abhaya_token");
+
 async function raw(path, { method = "GET", body, form } = {}) {
-  const h = {}; if (tok()) h.Authorization = "Bearer " + tok(); if (body) h["Content-Type"] = "application/json";
-  try { return await fetch(BASE + path, { method, headers: h, body: form || (body ? JSON.stringify(body) : undefined) }); }
-  catch (err) {
-    console.error("Network / API fetch error:", err);
-    throw new Error("Cannot reach the server. Check your connection.");
+  const h = {};
+  if (tok()) h.Authorization = "Bearer " + tok();
+  if (body) h["Content-Type"] = "application/json";
+
+  const targetUrl = BASE + path;
+  try {
+    return await fetch(targetUrl, {
+      method,
+      headers: h,
+      body: form || (body ? JSON.stringify(body) : undefined)
+    });
+  } catch (err) {
+    console.error(`Network fetch failed for [${method} ${targetUrl}]:`, err);
+    throw new Error(
+      `Cannot connect to backend server at "${BASE}". If hosted on Render, the free server may be waking up (takes ~30-50s). Please wait a moment and try again.`
+    );
   }
 }
+
 export async function api(path, opt) {
   const r = await raw(path, opt);
   if (r.status === 401) {
@@ -18,8 +47,28 @@ export async function api(path, opt) {
       window.location.href = "/login";
     }
   }
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(d.error || "Request failed"), { fields: d.fields, data: d });
+
+  // Read response as text to detect whether backend sent JSON or HTML error/SPA rewrite
+  const rawText = await r.text();
+  let d = {};
+  try {
+    d = rawText ? JSON.parse(rawText) : {};
+  } catch (e) {
+    if (rawText.includes("<!DOCTYPE") || rawText.includes("<html")) {
+      const isVercelHost = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
+      if (BASE === "/api" && isVercelHost) {
+        throw new Error(
+          "Backend API URL is not configured on Vercel. Please set VITE_API_URL in your Vercel Project Settings (Environment Variables) to your deployed backend URL, then click Redeploy."
+        );
+      }
+      throw new Error(`Server returned HTML (status ${r.status}) instead of JSON. The backend service may still be booting.`);
+    }
+  }
+
+  if (!r.ok) {
+    const errorMsg = d.error || d.message || `Request failed (${r.status})`;
+    throw Object.assign(new Error(errorMsg), { fields: d.fields, data: d, status: r.status });
+  }
   return d;
 }
 export async function download(path, name) {

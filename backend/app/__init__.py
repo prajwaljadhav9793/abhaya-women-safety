@@ -10,11 +10,27 @@ def create_app(config=None):
     if config:
         app.config.update(config)
     os.makedirs(app.config["UPLOAD_DIR"], exist_ok=True)
-    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+    CORS(app, resources={r"/api/*": {"origins": "*"}},
+         allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Private-Network", "Access-Control-Allow-Origin"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"])
     db.init_app(app); jwt.init_app(app); limiter.init_app(app)
+
+    @app.before_request
+    def handle_options():
+        from flask import request
+        if request.method == "OPTIONS":
+            resp = jsonify(ok=True)
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Access-Control-Allow-Private-Network"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            resp.headers["Access-Control-Allow-Private-Network"] = "true"
+            return resp, 200
 
     @app.after_request
     def after_request_cors(response):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Access-Control-Allow-Private-Network"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
         response.headers["Access-Control-Allow-Private-Network"] = "true"
         return response
 
