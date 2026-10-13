@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Routes, Route, Navigate, NavLink, Link, useNavigate, Outlet } from "react-router-dom";
-import { Shield, Home, Users, Route as RouteIcon, Navigation, Flag, BarChart3, LifeBuoy, Bot, FolderLock, User, Settings, LogOut, PhoneCall, Menu, X, Bell, Sparkles, ShieldAlert, Volume2, VolumeX } from "lucide-react";
+import { Shield, Home, Users, Route as RouteIcon, Navigation, Flag, BarChart3, LifeBuoy, Bot, FolderLock, User, Settings, LogOut, PhoneCall, Menu, X, Bell, Sparkles, ShieldAlert, Volume2, VolumeX, ShieldCheck, FileText, Activity } from "lucide-react";
 import { api, tok, useLoad } from "./api.js";
 import * as P from "./pages.jsx";
 import FakeCall from "./pages/FakeCall.jsx";
@@ -306,7 +306,7 @@ function Sos() {
   </>;
 }
 
-const nav = [
+const citizenNav = [
   ["/dashboard", Home, "Dashboard"],
   ["/contacts", Users, "Emergency Contacts"],
   ["/routes", RouteIcon, "Safe Routes"],
@@ -320,10 +320,23 @@ const nav = [
   ["/profile", User, "My Profile"]
 ];
 
+const policeNav = [
+  ["/admin", ShieldCheck, "Command Center"],
+  ["/admin?tab=complaints", FileText, "Citizen Complaints"],
+  ["/analytics", BarChart3, "Safety Intel Module"],
+  ["/history", FolderLock, "Evidence Vault"],
+  ["/routes", RouteIcon, "Safe Routes Intel"],
+  ["/admin?tab=sos", ShieldAlert, "Live SOS Feeds"],
+  ["/admin?tab=users", Users, "Citizen Registry"],
+  ["/admin?tab=audit", Activity, "Audit Ledger"],
+  ["/profile", User, "Officer Profile"]
+];
+
 function Shell() {
   const { user, logout } = useAuth();
   const { data } = useLoad("/notifications");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isAdmin = user?.role === "admin";
 
   return (
     <div className="shell">
@@ -343,7 +356,17 @@ function Shell() {
           </Link>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="badge b-verified" style={{ fontSize: "0.68rem" }}>SHIELD ACTIVE</span>
+          <span 
+            className="badge" 
+            style={{ 
+              fontSize: "0.68rem",
+              background: isAdmin ? "rgba(59, 130, 246, 0.2)" : "rgba(34, 197, 94, 0.2)",
+              color: isAdmin ? "#93c5fd" : "#4ade80",
+              border: isAdmin ? "1px solid rgba(59, 130, 246, 0.4)" : "1px solid rgba(34, 197, 94, 0.4)"
+            }}
+          >
+            {isAdmin ? "AUTHORITY DESK" : "SHIELD ACTIVE"}
+          </span>
           {data?.items?.length > 0 && (
             <span className="badge b-pending" style={{ fontSize: "0.68rem" }}>
               <Bell size={12} /> {data.items.length}
@@ -362,39 +385,64 @@ function Shell() {
         <div>
           <div className="side-brand-header">
             <Link to="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-              <img src="/logo.png" alt="Logo" style={{ width: 36, height: 36, borderRadius: 8, filter: "drop-shadow(0 0 10px rgba(168,85,247,0.5))" }} />
+              <img src="/logo.png" alt="Logo" style={{ width: 36, height: 36, borderRadius: 8, filter: isAdmin ? "drop-shadow(0 0 10px rgba(59,130,246,0.5))" : "drop-shadow(0 0 10px rgba(168,85,247,0.5))" }} />
               <div>
                 <div className="grad" style={{ fontWeight: 800, fontSize: "1.25rem", lineHeight: 1.1 }}>ABHAYA</div>
-                <div style={{ fontSize: "0.62rem", color: "#94a3b8", letterSpacing: "1.5px", fontWeight: 700 }}>SAFETY PLATFORM</div>
+                <div style={{ fontSize: "0.62rem", color: isAdmin ? "#93c5fd" : "#94a3b8", letterSpacing: "1.5px", fontWeight: 700 }}>
+                  {isAdmin ? "LAW ENFORCEMENT" : "SAFETY PLATFORM"}
+                </div>
               </div>
             </Link>
           </div>
 
           <div className="side-nav-menu">
-            <div className="side-nav-section-title">CORE SAFETY MODULES</div>
-            {nav.map(([to, I, t]) => (
-              <NavLink 
-                key={to} 
-                to={to} 
-                onClick={() => setMobileOpen(false)}
-                className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}
-              >
-                <span className="side-icon-wrap"><I size={17} /></span>
-                <span>{t}</span>
-              </NavLink>
-            ))}
-
-            {user?.role === "admin" && (
+            {isAdmin ? (
               <>
-                <div className="side-nav-section-title" style={{ marginTop: 14 }}>ADMINISTRATION</div>
+                <div className="side-nav-section-title" style={{ color: "#60a5fa" }}>LAW ENFORCEMENT COMMAND</div>
+                {policeNav.map(([to, I, t]) => (
+                  <NavLink 
+                    key={to} 
+                    to={to} 
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}
+                  >
+                    <span className="side-icon-wrap"><I size={17} /></span>
+                    <span>{t}</span>
+                  </NavLink>
+                ))}
+
+                <div className="side-nav-section-title" style={{ marginTop: 14 }}>CITIZEN TOOLS PREVIEW</div>
                 <NavLink 
-                  to="/admin" 
+                  to="/dashboard" 
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}
                 >
-                  <span className="side-icon-wrap"><Settings size={17} /></span>
-                  <span>Admin Console</span>
+                  <span className="side-icon-wrap"><Home size={17} /></span>
+                  <span>Citizen Dashboard</span>
                 </NavLink>
+                <NavLink 
+                  to="/fake-call" 
+                  onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}
+                >
+                  <span className="side-icon-wrap"><PhoneCall size={17} /></span>
+                  <span>Fake Call Tool</span>
+                </NavLink>
+              </>
+            ) : (
+              <>
+                <div className="side-nav-section-title">CORE SAFETY MODULES</div>
+                {citizenNav.map(([to, I, t]) => (
+                  <NavLink 
+                    key={to} 
+                    to={to} 
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}
+                  >
+                    <span className="side-icon-wrap"><I size={17} /></span>
+                    <span>{t}</span>
+                  </NavLink>
+                ))}
               </>
             )}
           </div>
@@ -403,12 +451,14 @@ function Shell() {
         {/* User Mini Card at Sidebar Bottom */}
         <div className="side-user-footer">
           <div className="side-user-info">
-            <div className="user-avatar-circle">
+            <div className="user-avatar-circle" style={{ background: isAdmin ? "linear-gradient(135deg, #1d4ed8, #0284c7)" : undefined }}>
               {user?.full_name ? user.full_name.charAt(0).toUpperCase() : "U"}
             </div>
             <div className="user-details-text">
               <div className="user-name-label">{user?.full_name || "User"}</div>
-              <div className="user-role-chip">{user?.role === "admin" ? "Administrator" : "Verified User"}</div>
+              <div className="user-role-chip" style={{ color: isAdmin ? "#60a5fa" : undefined }}>
+                {isAdmin ? "Police / Authority" : "Protected Citizen"}
+              </div>
             </div>
           </div>
           <button 
@@ -433,22 +483,45 @@ function Shell() {
 
       {/* Mobile Native App Style Bottom Navigation Bar */}
       <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
-        <NavLink to="/dashboard" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
-          <Home size={19} />
-          <span>Home</span>
-        </NavLink>
-        <NavLink to="/routes" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
-          <RouteIcon size={19} />
-          <span>Routes</span>
-        </NavLink>
-        <NavLink to="/journey" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
-          <Navigation size={19} />
-          <span>Journey</span>
-        </NavLink>
-        <NavLink to="/nearby" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
-          <LifeBuoy size={19} />
-          <span>Nearby</span>
-        </NavLink>
+        {isAdmin ? (
+          <>
+            <NavLink to="/admin" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <ShieldCheck size={19} />
+              <span>Command</span>
+            </NavLink>
+            <NavLink to="/admin?tab=complaints" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <FileText size={19} />
+              <span>Complaints</span>
+            </NavLink>
+            <NavLink to="/analytics" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <BarChart3 size={19} />
+              <span>Intel</span>
+            </NavLink>
+            <NavLink to="/history" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <FolderLock size={19} />
+              <span>Evidence</span>
+            </NavLink>
+          </>
+        ) : (
+          <>
+            <NavLink to="/dashboard" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <Home size={19} />
+              <span>Home</span>
+            </NavLink>
+            <NavLink to="/routes" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <RouteIcon size={19} />
+              <span>Routes</span>
+            </NavLink>
+            <NavLink to="/journey" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <Navigation size={19} />
+              <span>Journey</span>
+            </NavLink>
+            <NavLink to="/nearby" className={({ isActive }) => `mob-tab ${isActive ? "active" : ""}`}>
+              <LifeBuoy size={19} />
+              <span>Nearby</span>
+            </NavLink>
+          </>
+        )}
         <button 
           type="button" 
           className="mob-tab" 
@@ -477,6 +550,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<P.Landing />} />
           <Route path="/login" element={<P.Login />} />
+          <Route path="/admin-login" element={<P.Login initialPortal="police" />} />
           <Route path="/register" element={<P.Register />} />
           <Route element={<Guard><Shell /></Guard>}>
             <Route path="/dashboard" element={<P.Dashboard />} />

@@ -22,7 +22,9 @@ import ReportHazard from "./ReportHazard.jsx";
 import FakeCallCard from "./components/fakecall/FakeCallCard.jsx";
 import FakeCall from "./pages/FakeCall.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
-export { FakeCall, ProfilePage };
+import LoginPage from "./pages/LoginPage.jsx";
+import AdminPage from "./pages/AdminPage.jsx";
+export { FakeCall, ProfilePage, LoginPage, AdminPage };
 C.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend);
 
 const DEF = [16.705, 74.243];
@@ -170,13 +172,16 @@ export function Landing() {
 
           <div className="nav-action-buttons">
             {user ? (
-              <Link to="/dashboard" className="btn-nav-register">
-                Dashboard <ArrowRight size={14} />
+              <Link to={user.role === "admin" ? "/admin" : "/dashboard"} className="btn-nav-register">
+                {user.role === "admin" ? "Police Console" : "Dashboard"} <ArrowRight size={14} />
               </Link>
             ) : (
               <>
                 <Link to="/login" className="btn-nav-login" title="Login with email or phone">
-                  <LogIn size={15} /> Login
+                  <LogIn size={15} /> Citizen Login
+                </Link>
+                <Link to="/admin-login" className="btn-nav-login" style={{ borderColor: "rgba(59, 130, 246, 0.45)", color: "#93c5fd" }} title="Police & Authorities Portal">
+                  <ShieldCheck size={15} /> Police Portal
                 </Link>
                 <Link to="/register" className="btn-nav-register" title="Create a new account">
                   <UserPlus size={15} /> Register Free
@@ -200,20 +205,25 @@ export function Landing() {
           <a href="#portal" className="nav-link-item" onClick={() => setMobileMenuOpen(false)}>Login / Register Portal</a>
           <a href="#helplines" className="nav-link-item" onClick={() => setMobileMenuOpen(false)}>Helplines</a>
           <a href="#about" className="nav-link-item" onClick={() => setMobileMenuOpen(false)}>About & Privacy</a>
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
             {user ? (
-              <Link to="/dashboard" className="btn-nav-register" style={{ width: "100%", justifyContent: "center" }} onClick={() => setMobileMenuOpen(false)}>
-                Go to Dashboard <ArrowRight size={14} />
+              <Link to={user.role === "admin" ? "/admin" : "/dashboard"} className="btn-nav-register" style={{ width: "100%", justifyContent: "center" }} onClick={() => setMobileMenuOpen(false)}>
+                {user.role === "admin" ? "Police Console" : "Go to Dashboard"} <ArrowRight size={14} />
               </Link>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, width: "100%" }}>
-                <Link to="/login" className="btn-nav-login" style={{ justifyContent: "center", padding: "10px 14px" }} onClick={() => setMobileMenuOpen(false)}>
-                  <LogIn size={16} /> Login
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, width: "100%" }}>
+                  <Link to="/login" className="btn-nav-login" style={{ justifyContent: "center", padding: "10px 14px" }} onClick={() => setMobileMenuOpen(false)}>
+                    <LogIn size={16} /> Citizen Login
+                  </Link>
+                  <Link to="/register" className="btn-nav-register" style={{ justifyContent: "center", padding: "10px 14px" }} onClick={() => setMobileMenuOpen(false)}>
+                    <UserPlus size={16} /> Register
+                  </Link>
+                </div>
+                <Link to="/admin-login" className="btn-nav-login" style={{ width: "100%", justifyContent: "center", padding: "10px 14px", borderColor: "rgba(59, 130, 246, 0.45)", color: "#93c5fd" }} onClick={() => setMobileMenuOpen(false)}>
+                  <ShieldCheck size={16} /> Police &amp; Authority Portal
                 </Link>
-                <Link to="/register" className="btn-nav-register" style={{ justifyContent: "center", padding: "10px 14px" }} onClick={() => setMobileMenuOpen(false)}>
-                  <UserPlus size={16} /> Register
-                </Link>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -436,7 +446,7 @@ export function Landing() {
           </p>
         </div>
 
-        <div className="portal-cards-grid">
+        <div className="portal-cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
           {/* Card 1: Register */}
           <div className="portal-access-card register-card">
             <div>
@@ -446,7 +456,7 @@ export function Landing() {
                 </div>
                 <span className="badge b-verified">NEW MEMBERS</span>
               </div>
-              <h3 className="portal-card-title">Create Free Account</h3>
+              <h3 className="portal-card-title">Create Citizen Account</h3>
               <p className="portal-card-desc">
                 Setup your safety profile in under 30 seconds. Connect your trusted emergency contacts circle with automatic SMS & WhatsApp coordinate broadcasting.
               </p>
@@ -462,47 +472,69 @@ export function Landing() {
             </Link>
           </div>
 
-          {/* Card 2: Login */}
+          {/* Card 2: Citizen Login */}
           <div className="portal-access-card login-card">
             <div>
               <div className="portal-card-header">
                 <div className="portal-icon-box login-glow">
                   <LogIn size={26} />
                 </div>
-                <span className="badge b-pending">RETURNING USERS</span>
+                <span className="badge b-pending">CITIZEN PORTAL</span>
               </div>
-              <h3 className="portal-card-title">Sign In to Dashboard</h3>
+              <h3 className="portal-card-title">Citizen Safety Login</h3>
               <p className="portal-card-desc">
-                Already registered or testing the system? Access your personal safety dashboard, manage guardians circle, or test instantly with preconfigured accounts.
+                Access your personal safety dashboard, manage guardian circles, view verified safe routes, and track commutes.
               </p>
               <div className="portal-demo-box">
                 <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "#c084fc", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Sparkles size={13} /> 1-Click Instant Demo Login:
+                  <Sparkles size={13} /> 1-Click Citizen Demo Login:
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <button
-                    type="button"
-                    className="btn ghost sm"
-                    style={{ width: "100%", justifyContent: "center" }}
-                    onClick={() => quickDemoLogin("demo.user@abhaya.test", "Demo@12345")}
-                    disabled={demoLoading}
-                  >
-                    👤 Demo User
-                  </button>
-                  <button
-                    type="button"
-                    className="btn ghost sm"
-                    style={{ width: "100%", justifyContent: "center" }}
-                    onClick={() => quickDemoLogin("demo.admin@abhaya.test", "Admin@12345")}
-                    disabled={demoLoading}
-                  >
-                    🛡️ Demo Admin
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  style={{ width: "100%", justifyContent: "center", borderColor: "rgba(168,85,247,0.4)" }}
+                  onClick={() => quickDemoLogin("demo.user@abhaya.test", "Demo@12345")}
+                  disabled={demoLoading}
+                >
+                  👤 Sign in as Demo Citizen
+                </button>
               </div>
             </div>
             <Link to="/login" className="btn ghost" style={{ width: "100%", justifyContent: "center", borderColor: "rgba(168,85,247,0.5)", color: "#fff" }}>
-              <LogIn size={18} /> Login with Password <ArrowRight size={18} />
+              <LogIn size={18} /> Citizen Sign In <ArrowRight size={18} />
+            </Link>
+          </div>
+
+          {/* Card 3: Police & Law Enforcement Command Gateway */}
+          <div className="portal-access-card" style={{ borderColor: "rgba(59, 130, 246, 0.4)", background: "rgba(15, 23, 42, 0.7)" }}>
+            <div>
+              <div className="portal-card-header">
+                <div className="portal-icon-box" style={{ background: "linear-gradient(135deg, rgba(37, 99, 235, 0.3), rgba(2, 132, 199, 0.3))", border: "1px solid rgba(59, 130, 246, 0.5)", color: "#60a5fa" }}>
+                  <ShieldCheck size={26} />
+                </div>
+                <span className="badge" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#93c5fd", border: "1px solid rgba(59, 130, 246, 0.4)" }}>AUTHORITY ACCESS</span>
+              </div>
+              <h3 className="portal-card-title">Police &amp; Authority Portal</h3>
+              <p className="portal-card-desc">
+                Dedicated command center for jurisdictional police, emergency dispatchers & higher authorities to manage complaints, review evidence & monitor live SOS feeds.
+              </p>
+              <div className="portal-demo-box" style={{ background: "rgba(30, 58, 138, 0.25)", borderColor: "rgba(59, 130, 246, 0.35)" }}>
+                <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "#93c5fd", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <ShieldCheck size={13} /> 1-Click Police Command Login:
+                </div>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  style={{ width: "100%", justifyContent: "center", borderColor: "rgba(59, 130, 246, 0.5)", color: "#93c5fd" }}
+                  onClick={() => quickDemoLogin("demo.admin@abhaya.test", "Admin@12345")}
+                  disabled={demoLoading}
+                >
+                  👮 Sign in as Police Officer
+                </button>
+              </div>
+            </div>
+            <Link to="/admin-login" className="btn" style={{ width: "100%", justifyContent: "center", background: "linear-gradient(135deg, #1d4ed8, #0284c7)", color: "#fff", border: "none" }}>
+              <ShieldCheck size={18} /> Police Command Gateway <ArrowRight size={18} />
             </Link>
           </div>
         </div>
@@ -601,75 +633,8 @@ export function Landing() {
   );
 }
 function useForm(init) { const [v, set] = useState(init); return [v, e => set({ ...v, [e.target.name]: e.target.value }), set]; }
-export function Login() {
-  const { login } = useAuth();
-  const [v, ch, set] = useForm({ identifier: "", password: "" });
-  const [e, setE] = useState("");
-  const [busy, setBusy] = useState(false);
+export const Login = LoginPage;
 
-  const fillAndLogin = async (id, pw) => {
-    set({ identifier: id, password: pw });
-    setBusy(true);
-    setE("");
-    try {
-      const d = await api("/auth/login", { method: "POST", body: { identifier: id, password: pw } });
-      login(d.token, d.user);
-    } catch (x) {
-      setE(x.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="main" style={{ maxWidth: 440 }}>
-      <div style={{ marginBottom: 16 }}>
-        <Link to="/" className="mut" style={{ textDecoration: "none" }}>&larr; Back to Landing Page</Link>
-      </div>
-      <h2 className="grad">Welcome Back</h2>
-      <p className="mut" style={{ marginBottom: 18 }}>Sign in to access your personal safety hub.</p>
-
-      {/* Quick Demo Credentials Box */}
-      <div style={{ background: "rgba(139, 92, 246, 0.12)", border: "1px solid rgba(139, 92, 246, 0.35)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
-        <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "#c084fc", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-          ⚡ 1-Click Instant Demo Login
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <button 
-            type="button" 
-            className="btn ghost sm" 
-            style={{ width: "100%", justifyContent: "center" }}
-            onClick={() => fillAndLogin("demo.user@abhaya.test", "Demo@12345")}
-            disabled={busy}
-          >
-            👤 Demo User
-          </button>
-          <button 
-            type="button" 
-            className="btn ghost sm" 
-            style={{ width: "100%", justifyContent: "center" }}
-            onClick={() => fillAndLogin("demo.admin@abhaya.test", "Admin@12345")}
-            disabled={busy}
-          >
-            🛡️ Demo Admin
-          </button>
-        </div>
-      </div>
-
-      <form className="card" onSubmit={async ev => { ev.preventDefault(); setBusy(true); try { const d = await api("/auth/login", { method: "POST", body: v }); login(d.token, d.user); } catch (x) { setE(x.message); } finally { setBusy(false); } }}>
-        <Field l="Email or phone" name="identifier" value={v.identifier} onChange={ch} required placeholder="demo.user@abhaya.test" />
-        <Field l="Password" type="password" name="password" value={v.password} onChange={ch} required placeholder="••••••••" />
-        <Err e={e} />
-        <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} disabled={busy}>
-          {busy ? "Signing in..." : "Login to Dashboard"}
-        </button>
-        <p className="mut" style={{ textAlign: "center", marginTop: 14 }}>
-          No account? <Link to="/register">Create one here</Link>
-        </p>
-      </form>
-    </div>
-  );
-}
 export function Register() {
   const nv = useNavigate(), [v, ch] = useForm({ full_name: "", email: "", phone: "", password: "", confirm_password: "" }), [e, setE] = useState(""), [f, setF] = useState({});
   return <div className="main" style={{ maxWidth: 440 }}><div style={{ marginBottom: 16 }}><Link to="/" className="mut" style={{ textDecoration: "none" }}>&larr; Back to Landing Page</Link></div><h2 className="grad">Create account</h2><form className="card" onSubmit={async ev => { ev.preventDefault(); try { await api("/auth/register", { method: "POST", body: v }); nv("/login"); } catch (x) { setE(x.message); setF(x.fields || {}); } }}>
@@ -1225,75 +1190,5 @@ export function History() {
 }
 
 /* ---------- admin ---------- */
-export function Admin() {
-  const [tab, setTab] = useState("reports"), [page, setPage] = useState(1), [st, setSt] = useState(""), [msg, setMsg] = useState("");
-  const path = { reports: `/admin/reports?page=${page}&status=${st}`, users: `/admin/users?page=${page}`, sos: `/admin/sos?page=${page}`, audit: `/admin/audit?page=${page}` }[tab], { data, err, reload } = useLoad(path, [tab, page, st]), stats = useLoad("/admin/stats");
-  const review = async (r, status) => { const reason = prompt(`Reason for marking report #${r.id} as ${status}?`); if (!reason) return; try { await api(`/admin/reports/${r.id}/review`, { method: "POST", body: { status, reason } }); setMsg("Saved & audited"); reload(); } catch (e) { setMsg(e.message); } };
-  return <>
-    <h2>Admin dashboard</h2>
-    {stats.data && <div className="grid">{Object.entries(stats.data).map(([k, x]) => <div className="card" key={k}>{k}<h2>{x}</h2></div>)}</div>}
-    <div className="row">
-      {["reports", "users", "sos", "audit"].map(t => <button key={t} className={"btn sm" + (tab === t ? "" : " ghost")} onClick={() => { setTab(t); setPage(1); }}>{t}</button>)}
-      {tab === "reports" && <select style={{ width: 160 }} onChange={e => setSt(e.target.value)}><option value="">All</option>{["pending", "under_review", "verified", "rejected", "needs_info"].map(s => <option key={s}>{s}</option>)}</select>}
-    </div>
-    <Err e={err || msg} />
-    {tab === "reports" && data?.items.map(r => (
-      <div className="card" key={r.id}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <b>#{r.id} {r.category}</b>
-          <button className="btn ghost sm" style={{ display: "inline-flex", alignItems: "center", gap: 5, borderColor: "rgba(168,85,247,0.4)", color: "#c084fc" }} onClick={() => download("/pdf/incident/" + r.id, `abhaya_incident_dossier_${r.id}.pdf`)}>
-            <FileDown size={14} /> Download Official PDF Dossier
-          </button>
-        </div>
-        <Tag s={r.status} /> <span className="mut">user {r.user_id} {r.is_demo ? "(DEMO)" : ""}</span>
-        <p style={{ margin: "8px 0" }}>{r.description}</p>
-        <p className="mut" style={{ fontSize: "0.8rem" }}>{r.incident_time} @ {r.lat},{r.lng} {r.review_reason && "- last note: " + r.review_reason}</p>
-        {r.evidence && r.evidence.length > 0 && (
-          <div className="row" style={{ flexWrap: "wrap", gap: 6, margin: "6px 0" }}>
-            {r.evidence.map(ev => <button key={ev.id} className="btn ghost sm" onClick={() => download("/evidence/" + ev.id, ev.name)}><Download size={13} /> {ev.name}</button>)}
-          </div>
-        )}
-        <div className="row" style={{ marginTop: 8 }}>
-          {[["verified", ""], ["rejected", "red"], ["needs_info", "ghost"], ["under_review", "ghost"]].map(([s, c]) => (
-            <button key={s} className={"btn sm " + c} onClick={() => review(r, s)}>{s.replace("_", " ")}</button>
-          ))}
-        </div>
-      </div>
-    ))}
-    {tab === "users" && <div className="card"><table><tbody>{data?.items.map(u => <tr key={u.id}><td>{u.full_name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.is_active ? "active" : "deactivated"}</td><td><button className="btn ghost sm" onClick={() => confirm("Change account status?") && api(`/admin/users/${u.id}/active`, { method: "POST", body: { active: !u.is_active } }).then(reload).catch(e => setMsg(e.message))}>{u.is_active ? "Deactivate" : "Activate"}</button></td></tr>)}</tbody></table></div>}
-    {tab === "sos" && (
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>SOS Event</th>
-              <th>Trigger Time</th>
-              <th>Operating Mode</th>
-              <th>Status</th>
-              <th>Notifications Broadcast</th>
-              <th style={{ textAlign: "right" }}>Download Option</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.items.map(e => (
-              <tr key={e.id}>
-                <td><b>#{e.id}</b> (user {e.user_id})</td>
-                <td>{e.created_at}</td>
-                <td><span className="badge">{e.mode?.toUpperCase()}</span></td>
-                <td><Tag s={e.status} /></td>
-                <td>{e.notifications?.map(n => n.status).join(", ") || "None"}</td>
-                <td style={{ textAlign: "right" }}>
-                  <button className="btn ghost sm" style={{ display: "inline-flex", alignItems: "center", gap: 5 }} onClick={() => download("/pdf/sos/" + e.id, `abhaya_sos_dossier_${e.id}.pdf`)}>
-                    <FileDown size={13} /> Download PDF
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )}
-    {tab === "audit" && <div className="card"><table><tbody>{data?.items.map(a => <tr key={a.id}><td>{a.at}</td><td>admin {a.admin_id}</td><td>{a.action}</td><td>{a.target}</td><td>{a.old}→{a.new}</td><td>{a.reason}</td></tr>)}</tbody></table></div>}
-    <div className="row"><button className="btn ghost sm" disabled={page < 2} onClick={() => setPage(page - 1)}>Prev</button><span>Page {page} ({data?.total ?? 0} total)</span><button className="btn ghost sm" disabled={!data || page * 15 >= data.total} onClick={() => setPage(page + 1)}>Next</button></div>
-  </>;
-}
+export const Admin = AdminPage;
+

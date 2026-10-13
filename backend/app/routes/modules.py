@@ -837,10 +837,18 @@ def rdict(r, admin=False):
     last = AdminAction.query.filter_by(target_type="report", target_id=r.id).order_by(AdminAction.id.desc()).first()
     ps = get_jurisdiction_police_station(r.lat, r.lng, r.location_label)
     d = dict(id=r.id, category=r.category, description=r.description, incident_time=r.incident_time.isoformat(), lat=r.lat, lng=r.lng,
-             location_label=r.location_label, status=r.status, is_demo=r.is_demo, created_at=r.created_at.isoformat(),
+             location_label=r.location_label, severity=r.severity, status=r.status, is_demo=r.is_demo, created_at=r.created_at.isoformat(),
              police_station=ps,
              review_reason=last.reason if last else None, evidence=[dict(id=e.id, name=e.original_name, size=e.size_bytes) for e in r.evidence])
-    if admin: d["user_id"] = r.user_id
+    if admin:
+        d["user_id"] = r.user_id
+        u_obj = db.session.get(User, r.user_id)
+        if u_obj:
+            d["complainant"] = {
+                "name": u_obj.full_name,
+                "phone": u_obj.phone,
+                "email": u_obj.email
+            }
     return d
 
 @bp.post("/reports")
@@ -1428,24 +1436,113 @@ def notes(u):
 
 # ---------------- Module 12: admin ----------------
 def page_args(): return request.args.get("page", 1, type=int), 15
+
+STATUS_ALIAS_MAP = {
+    "verify": "verified",
+    "verified": "verified",
+    "hold": "under_review",
+    "under_review": "under_review",
+    "dismiss": "rejected",
+    "dismissed": "rejected",
+    "rejected": "rejected",
+    "needs_info": "needs_info",
+    "pending": "pending"
+}
+
 @bp.get("/admin/reports")
+@bp.get("/admin/complaints")
 @login_required(["admin"])
 def a_reports(u):
     q = IncidentReport.query.order_by(IncidentReport.created_at.desc())
-    if request.args.get("status") in STATUSES: q = q.filter_by(status=request.args["status"])
-    pg, pp = page_args(); p = q.paginate(page=pg, per_page=pp, error_out=False)
+    req_st = request.args.get("status")
+    if req_st:
+        mapped_st = STATUS_ALIAS_MAP.get(req_st.lower(), req_st)
+        if mapped_st in STATUSES:
+            q = q.filter_by(status=mapped_st)
+    
+    search = (request.args.get("q") or "").strip()
+    if search:
+        q = q.filter(
+            IncidentReport.description.ilike(f"%{search}%") |
+            IncidentReport.category.ilike(f"%{search}%") |
+            IncidentReport.location_label.ilike(f"%{search}%")
+        )
+    
+    pg, pp = page_args()
+    p = q.paginate(page=pg, per_page=pp, error_out=False)
     return jsonify(items=[rdict(r, True) for r in p.items], total=p.total, page=pg)
 
 @bp.post("/admin/reports/<int:rid>/review")
+@bp.post("/admin/complaints/<int:rid>/review")
 @login_required(["admin"])
 def a_review(u, rid):
-    r = db.session.get(IncidentReport, rid); d = request.get_json(silent=True) or {}
-    if not r: return jsonify(error="Report not found"), 404
-    if d.get("status") not in STATUSES: return jsonify(error="Invalid status"), 422
-    if len((d.get("reason") or "").strip()) < 3: return jsonify(error="A reason is required"), 422
-    old = r.status; r.status = d["status"]; audit(u, "review_report", "report", r.id, old, r.status, d["reason"][:500])
-    db.session.add(UserNotification(user_id=r.user_id, title="Report status updated", body=f"Report #{r.id} is now: {r.status}")); db.session.commit()
-    return jsonify(report=rdict(r, True))
+    r = db.session.get(IncidentReport, rid)
+    d = request.get_json(silent=True) or {}
+    if not r:
+        return jsonify(error="Complaint / Incident report not found"), 404
+    
+    raw_status = (d.get("status") or "").strip().lower()
+    target_status = STATUS_ALIAS_MAP.get(raw_status, raw_status)
+    if target_status not in STATUSES:
+        return jsonify(error=f"Invalid status: '{raw_status}'. Allowed: verify, hold, dismiss, needs_info, pending"), 422
+    
+    reason = (d.get("reason") or "").strip()
+    if not reason:
+        reason_map = {
+            "verified": "Complaint verified & jurisdictional action/patrol dispatched by authority.",
+            "under_review": "Complaint placed on hold under police investigation & verification.",
+            "rejected": "Complaint dismissed after review (non-actionable or duplicate).",
+            "needs_info": "Additional evidence or details requested from complainant.",
+            "pending": "Reverted to pending queue for re-evaluation."
+        }
+        reason = reason_map.get(target_status, f"Status updated to {target_status} by officer {u.full_name}.")
+        
+    old = r.status
+    r.status = target_status
+    audit(u, "review_report", "report", r.id, old, r.status, reason[:500])
+    
+    status_label_map = {
+        "verified": "VERIFIED & DISPATCHED",
+        "under_review": "UNDER INVESTIGATION (HOLD)",
+        "rejected": "DISMISSED",
+        "needs_info": "ADDITIONAL INFO REQUESTED",
+        "pending": "PENDING REVIEW"
+    }
+    status_label = status_label_map.get(target_status, target_status.upper())
+    
+    db.session.add(UserNotification(
+        user_id=r.user_id,
+        title=f"Complaint #{r.id} Status: {status_label}",
+        body=f"Your complaint regarding '{r.category}' was reviewed by authority: {reason}"
+    ))
+    db.session.commit()
+    return jsonify(report=rdict(r, True), message=f"Complaint marked as {status_label}")
+
+@bp.get("/admin/evidence")
+@login_required(["admin"])
+def a_evidence(u):
+    pg, pp = page_args()
+    q = IncidentEvidence.query.order_by(IncidentEvidence.uploaded_at.desc())
+    p = q.paginate(page=pg, per_page=pp, error_out=False)
+    items = []
+    for ev in p.items:
+        rep = db.session.get(IncidentReport, ev.report_id)
+        user_obj = db.session.get(User, ev.user_id)
+        items.append({
+            "id": ev.id,
+            "report_id": ev.report_id,
+            "user_id": ev.user_id,
+            "user_name": user_obj.full_name if user_obj else f"User #{ev.user_id}",
+            "user_phone": user_obj.phone if user_obj else None,
+            "original_name": ev.original_name,
+            "mime_type": ev.mime_type,
+            "size_bytes": ev.size_bytes,
+            "uploaded_at": ev.uploaded_at.isoformat(),
+            "category": rep.category if rep else "Incident Report",
+            "report_status": rep.status if rep else "unknown",
+            "location_label": rep.location_label if rep else "Kolhapur"
+        })
+    return jsonify(items=items, total=p.total, page=pg)
 
 @bp.get("/admin/users")
 @login_required(["admin"])
@@ -1479,4 +1576,13 @@ def a_audit(u):
 @bp.get("/admin/stats")
 @login_required(["admin"])
 def a_stats(u):
-    return jsonify(users=User.query.count(), sos=SosEvent.query.count(), reports=IncidentReport.query.count(), pending=IncidentReport.query.filter_by(status="pending").count(), journeys=Journey.query.count())
+    return jsonify(
+        users=User.query.count(),
+        sos=SosEvent.query.count(),
+        reports=IncidentReport.query.count(),
+        pending=IncidentReport.query.filter_by(status="pending").count(),
+        under_review=IncidentReport.query.filter_by(status="under_review").count(),
+        verified=IncidentReport.query.filter_by(status="verified").count(),
+        rejected=IncidentReport.query.filter_by(status="rejected").count(),
+        journeys=Journey.query.count()
+    )
