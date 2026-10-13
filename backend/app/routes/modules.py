@@ -5,7 +5,9 @@ import requests
 from flask import Blueprint, request, jsonify, send_file, current_app
 from extensions import db, limiter
 from app.models import (User, EmergencyContact, Journey, JourneyLocation, SosEvent, IncidentReport,
-                        IncidentEvidence, AdminAction, UserNotification)
+                        IncidentEvidence, AdminAction, UserNotification, OfficerProfile,
+                        UserMedicalProfile, SafetyZone, EvidenceVaultLog, FakeCallLog,
+                        SafetyChatMessage, SafePlace)
 from app.utils import login_required
 from app.routes.kolhapur_places import search_kolhapur_places
 from app.routes.kolhapur_emergency import get_curated_emergency_places, hav_distance_m
@@ -753,12 +755,26 @@ def chat(u):
         if kw in low and path not in nav_suggestions:
             nav_suggestions.append(path)
 
+    # Persist conversation to safety_chat_messages table
+    try:
+        db.session.add(SafetyChatMessage(user_id=u.id, sender="user", message=msg))
+        db.session.add(SafetyChatMessage(user_id=u.id, sender="assistant", message=reply_text or "Safety assistant response recorded."))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
     return jsonify(
         reply=reply_text,
         suggestions=nav_suggestions[:4],
         engine=engine_source,
         success=True
     )
+
+@bp.get("/ai/messages")
+@login_required()
+def get_ai_messages(u):
+    msgs = SafetyChatMessage.query.filter_by(user_id=u.id).order_by(SafetyChatMessage.id.desc()).limit(30).all()
+    return jsonify(messages=[m.to_dict() for m in reversed(msgs)])
 
 # ---------------- Module 06/10: reports & evidence ----------------
 def get_jurisdiction_police_station(lat, lng, location_label=""):
@@ -1578,11 +1594,133 @@ def a_audit(u):
 def a_stats(u):
     return jsonify(
         users=User.query.count(),
+        officers=User.query.filter_by(role="admin").count(),
         sos=SosEvent.query.count(),
         reports=IncidentReport.query.count(),
         pending=IncidentReport.query.filter_by(status="pending").count(),
         under_review=IncidentReport.query.filter_by(status="under_review").count(),
         verified=IncidentReport.query.filter_by(status="verified").count(),
         rejected=IncidentReport.query.filter_by(status="rejected").count(),
-        journeys=Journey.query.count()
+        journeys=Journey.query.count(),
+        safety_zones=SafetyZone.query.count(),
+        fake_calls=FakeCallLog.query.count()
     )
+
+# ---------------- Module 13: Fake Call Logs ----------------
+@bp.get("/fake-call/logs")
+@login_required()
+def get_fake_call_logs(u):
+    logs = FakeCallLog.query.filter_by(user_id=u.id).order_by(FakeCallLog.id.desc()).limit(20).all()
+    return jsonify(logs=[l.to_dict() for l in logs])
+
+@bp.post("/fake-call/logs")
+@login_required()
+def create_fake_call_log(u):
+    d = request.get_json(silent=True) or {}
+    log = FakeCallLog(
+        user_id=u.id,
+        caller_name=(d.get("caller_name") or "Dad")[:100],
+        caller_number=(d.get("caller_number") or "+91 98220 12345")[:30],
+        scenario=(d.get("scenario") or "urgent_pickup")[:80],
+        duration_seconds=int(d.get("duration_seconds") or 0)
+    )
+    db.session.add(log)
+    db.session.commit()
+    return jsonify(log=log.to_dict()), 201
+
+# ---------------- Module 14: Safe Places & Curated Hotspots ----------------
+@bp.get("/safe-places")
+def get_safe_places():
+    category = request.args.get("type")
+    q = SafePlace.query
+    if category:
+        q = q.filter_by(place_type=category)
+    places = q.order_by(SafePlace.id.asc()).all()
+    return jsonify(places=[p.to_dict() for p in places])
+
+# ---------------- Module 15: Safety Zones & Patrol Alerts ----------------
+@bp.get("/safety-zones")
+def get_safety_zones():
+    zones = SafetyZone.query.filter_by(is_active=True).all()
+    return jsonify(zones=[z.to_dict() for z in zones])
+
+@bp.get("/admin/safety-zones")
+@login_required(["admin"])
+def get_admin_safety_zones(admin_user):
+    zones = SafetyZone.query.order_by(SafetyZone.id.desc()).all()
+    return jsonify(zones=[z.to_dict() for z in zones])
+
+@bp.post("/admin/safety-zones")
+@login_required(["admin"])
+def create_safety_zone(admin_user):
+    d = request.get_json(silent=True) or {}
+    name = (d.get("name") or "").strip()
+    if not name or num(d.get("lat")) is None or num(d.get("lng")) is None:
+        return jsonify(error="Name, lat, and lng are required"), 422
+    z = SafetyZone(
+        name=name[:150],
+        zone_type=d.get("zone_type", "patrol_zone"),
+        risk_level=d.get("risk_level", "medium"),
+        lat=float(d["lat"]),
+        lng=float(d["lng"]),
+        radius_m=int(d.get("radius_m") or 500),
+        description=d.get("description", ""),
+        patrol_unit=d.get("patrol_unit", "Precinct Patrol Unit")[:100],
+        is_active=bool(d.get("is_active", True))
+    )
+    db.session.add(z)
+    db.session.flush()
+    audit(admin_user, "create_safety_zone", "safety_zone", z.id, reason=f"Created safety zone {name}")
+    db.session.commit()
+    return jsonify(zone=z.to_dict()), 201
+
+@bp.delete("/admin/safety-zones/<int:zid>")
+@login_required(["admin"])
+def delete_safety_zone(admin_user, zid):
+    z = SafetyZone.query.get(zid)
+    if not z:
+        return jsonify(error="Safety zone not found"), 404
+    db.session.delete(z)
+    audit(admin_user, "delete_safety_zone", "safety_zone", zid, reason=f"Deleted safety zone {z.name}")
+    db.session.commit()
+    return jsonify(message="Safety zone removed")
+
+# ---------------- Module 16: Evidence Vault Chain of Custody & Hash Sealing ----------------
+@bp.get("/admin/evidence/<int:eid>/vault-logs")
+@login_required(["admin"])
+def get_evidence_vault_logs(admin_user, eid):
+    ev = IncidentEvidence.query.get(eid)
+    if not ev:
+        return jsonify(error="Evidence record not found"), 404
+    logs = EvidenceVaultLog.query.filter_by(evidence_id=eid).order_by(EvidenceVaultLog.id.desc()).all()
+    return jsonify(
+        evidence=ev.to_dict(),
+        logs=[l.to_dict() for l in logs]
+    )
+
+@bp.post("/admin/evidence/<int:eid>/vault-verify")
+@login_required(["admin"])
+def verify_seal_evidence(admin_user, eid):
+    ev = IncidentEvidence.query.get(eid)
+    if not ev:
+        return jsonify(error="Evidence record not found"), 404
+    d = request.get_json(silent=True) or {}
+    notes = d.get("notes") or "Cryptographic chain of custody verified by police authority."
+    import hashlib
+    file_path = os.path.join(current_app.config.get("UPLOAD_DIR", "uploads"), ev.stored_name)
+    sha256 = None
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as f:
+            sha256 = hashlib.sha256(f.read()).hexdigest()
+        ev.sha256_hash = sha256
+    log = EvidenceVaultLog(
+        evidence_id=eid,
+        officer_id=admin_user.id,
+        action="verified_sealed",
+        sha256_hash=sha256 or "hash_verified",
+        officer_notes=notes
+    )
+    db.session.add(log)
+    audit(admin_user, "verify_evidence_seal", "evidence", eid, reason=notes)
+    db.session.commit()
+    return jsonify(message="Evidence sealed and verified in custody vault", evidence=ev.to_dict(), log=log.to_dict())

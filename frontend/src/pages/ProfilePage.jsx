@@ -91,6 +91,13 @@ export default function ProfilePage() {
       setPhone(user.phone || "");
       setLocationSharing(user.location_sharing_enabled ?? true);
       setPrefLang(user.preferred_language || "en");
+      if (user.medical_profile) {
+        setBloodGroup(user.medical_profile.blood_group || "B+");
+        setMedicalNotes(user.medical_profile.medical_notes || "");
+        setHomeCity(user.medical_profile.home_city || "Kolhapur, Maharashtra");
+        setAutoWhatsApp(user.medical_profile.auto_whatsapp_enabled ?? true);
+        setAutoSirenOnSos(user.medical_profile.auto_siren_enabled ?? true);
+      }
     }
   }, [user]);
 
@@ -114,7 +121,12 @@ export default function ProfilePage() {
           full_name: fullName.trim(),
           phone: phone.trim(),
           location_sharing_enabled: locationSharing,
-          preferred_language: prefLang
+          preferred_language: prefLang,
+          blood_group: bloodGroup,
+          medical_notes: medicalNotes,
+          home_city: homeCity,
+          auto_whatsapp_enabled: autoWhatsApp,
+          auto_siren_enabled: autoSirenOnSos
         }
       });
 
@@ -122,14 +134,14 @@ export default function ProfilePage() {
         setUser(d.user);
       }
 
-      // Save ICE details to local storage
+      // Save ICE details to local storage as offline cache
       localStorage.setItem("abhaya_ice_blood", bloodGroup);
       localStorage.setItem("abhaya_ice_notes", medicalNotes);
       localStorage.setItem("abhaya_ice_city", homeCity);
       localStorage.setItem("abhaya_auto_wa", String(autoWhatsApp));
       localStorage.setItem("abhaya_auto_siren", String(autoSirenOnSos));
 
-      setSaveStatus("✅ Profile and Safety Preferences updated successfully!");
+      setSaveStatus("✅ Profile & In-Case-of-Emergency (ICE) record saved to database!");
       setTimeout(() => setSaveStatus(""), 4000);
     } catch (err) {
       setSaveStatus(`❌ ${err.message || "Failed to save profile"}`);

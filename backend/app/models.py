@@ -26,6 +26,8 @@ class User(db.Model):
                  preferred_language=self.preferred_language, created_at=self.created_at.isoformat())
         if hasattr(self, "officer_profile") and self.officer_profile:
             d["officer_profile"] = self.officer_profile.to_dict()
+        if hasattr(self, "medical_profile") and self.medical_profile:
+            d["medical_profile"] = self.medical_profile.to_dict()
         return d
 
 class EmergencyContact(db.Model):
@@ -128,6 +130,21 @@ class IncidentEvidence(db.Model):
     stored_name = db.Column(db.String(100), nullable=False)   # random name, never public
     original_name = db.Column(db.String(255)); mime_type = db.Column(db.String(80))
     size_bytes = db.Column(db.Integer); uploaded_at = db.Column(db.DateTime, default=now)
+    sha256_hash = db.Column(db.String(64))
+    is_sealed = db.Column(db.Boolean, default=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "report_id": self.report_id,
+            "user_id": self.user_id,
+            "original_name": self.original_name,
+            "mime_type": self.mime_type,
+            "size_bytes": self.size_bytes,
+            "sha256_hash": self.sha256_hash,
+            "is_sealed": self.is_sealed,
+            "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else None
+        }
 
 class AdminAction(db.Model):
     __tablename__ = "admin_actions"
@@ -178,5 +195,164 @@ class OfficerProfile(db.Model):
             "designation": self.designation,
             "verified": self.verified,
             "created_at": self.created_at.isoformat()
+        }
+
+class UserMedicalProfile(db.Model):
+    __tablename__ = "user_medical_profiles"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    blood_group = db.Column(db.String(10), default="B+")
+    allergies = db.Column(db.String(255), default="None reported")
+    medical_notes = db.Column(db.Text, default="No known chronic conditions or medication dependencies")
+    home_city = db.Column(db.String(120), default="Kolhapur, Maharashtra")
+    emergency_hospital = db.Column(db.String(150), default="Chhatrapati Pramila Raje (CPR) Civil Hospital")
+    emergency_contact_phone = db.Column(db.String(20))
+    auto_siren_enabled = db.Column(db.Boolean, default=True)
+    auto_whatsapp_enabled = db.Column(db.Boolean, default=True)
+    updated_at = db.Column(db.DateTime, default=now, onupdate=now)
+
+    user = db.relationship("User", backref=db.backref("medical_profile", uselist=False, cascade="all, delete-orphan"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "blood_group": self.blood_group,
+            "allergies": self.allergies,
+            "medical_notes": self.medical_notes,
+            "home_city": self.home_city,
+            "emergency_hospital": self.emergency_hospital,
+            "emergency_contact_phone": self.emergency_contact_phone,
+            "auto_siren_enabled": self.auto_siren_enabled,
+            "auto_whatsapp_enabled": self.auto_whatsapp_enabled,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+class SafetyZone(db.Model):
+    __tablename__ = "safety_zones"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    zone_type = db.Column(db.String(50), default="patrol_zone")  # high_risk, patrol_zone, safe_haven, alert_area
+    risk_level = db.Column(db.String(20), default="medium")       # low, medium, high, critical
+    lat = db.Column(db.Float, nullable=False)
+    lng = db.Column(db.Float, nullable=False)
+    radius_m = db.Column(db.Integer, default=500)
+    description = db.Column(db.Text)
+    patrol_unit = db.Column(db.String(100), default="Precinct Patrol Unit")
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=now)
+    updated_at = db.Column(db.DateTime, default=now, onupdate=now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "zone_type": self.zone_type,
+            "risk_level": self.risk_level,
+            "lat": self.lat,
+            "lng": self.lng,
+            "radius_m": self.radius_m,
+            "description": self.description,
+            "patrol_unit": self.patrol_unit,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+class EvidenceVaultLog(db.Model):
+    __tablename__ = "evidence_vault_logs"
+    id = db.Column(db.Integer, primary_key=True)
+    evidence_id = db.Column(db.Integer, db.ForeignKey("incident_evidence.id", ondelete="CASCADE"), nullable=False, index=True)
+    officer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    action = db.Column(db.String(60), nullable=False) # accessed, verified, exported_for_court, sealed, integrity_checked
+    sha256_hash = db.Column(db.String(64))            # Cryptographic SHA-256 seal for evidentiary tamper protection
+    officer_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=now)
+
+    evidence = db.relationship("IncidentEvidence", backref="vault_logs")
+    officer = db.relationship("User", foreign_keys=[officer_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "evidence_id": self.evidence_id,
+            "officer_id": self.officer_id,
+            "officer_name": self.officer.full_name if self.officer else "Authorized Officer",
+            "action": self.action,
+            "sha256_hash": self.sha256_hash,
+            "officer_notes": self.officer_notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+class FakeCallLog(db.Model):
+    __tablename__ = "fake_call_logs"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    caller_name = db.Column(db.String(100), default="Dad")
+    caller_number = db.Column(db.String(30), default="+91 98220 12345")
+    scenario = db.Column(db.String(80), default="urgent_pickup")
+    duration_seconds = db.Column(db.Integer, default=0)
+    triggered_at = db.Column(db.DateTime, default=now)
+
+    user = db.relationship("User", backref="fake_calls")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "caller_name": self.caller_name,
+            "caller_number": self.caller_number,
+            "scenario": self.scenario,
+            "duration_seconds": self.duration_seconds,
+            "triggered_at": self.triggered_at.isoformat() if self.triggered_at else None
+        }
+
+class SafetyChatMessage(db.Model):
+    __tablename__ = "safety_chat_messages"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender = db.Column(db.Enum("user", "assistant"), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    intent = db.Column(db.String(60), default="general_safety")
+    is_emergency = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=now)
+
+    user = db.relationship("User", backref="ai_chats")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "sender": self.sender,
+            "message": self.message,
+            "intent": self.intent,
+            "is_emergency": self.is_emergency,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+class SafePlace(db.Model):
+    __tablename__ = "safe_places"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    place_type = db.Column(db.String(50), nullable=False) # police_station, hospital, women_safety_desk, pink_booth
+    address = db.Column(db.String(255))
+    lat = db.Column(db.Float, nullable=False)
+    lng = db.Column(db.Float, nullable=False)
+    phone = db.Column(db.String(50))
+    is_verified = db.Column(db.Boolean, default=True)
+    is_24x7 = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=now)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "place_type": self.place_type,
+            "address": self.address,
+            "lat": self.lat,
+            "lng": self.lng,
+            "phone": self.phone,
+            "is_verified": self.is_verified,
+            "is_24x7": self.is_24x7,
+            "created_at": self.created_at.isoformat() if self.created_at else None
         }
 

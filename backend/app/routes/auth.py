@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import create_access_token
 from sqlalchemy.exc import IntegrityError
 from extensions import db, limiter
-from app.models import User, OfficerProfile
+from app.models import User, OfficerProfile, UserMedicalProfile
 from app.utils import EMAIL_RE, PHONE_RE, clean_phone, valid_password, login_required
 
 bp = Blueprint("auth", __name__)
@@ -65,8 +65,54 @@ def update_profile(user):
         user.location_sharing_enabled = bool(d["location_sharing_enabled"])
     if d.get("preferred_language") in ("en", "hi", "mr"):
         user.preferred_language = d["preferred_language"]
+
+    # Also sync ICE / Medical emergency profile if passed
+    med_keys = ["blood_group", "allergies", "medical_notes", "home_city", "emergency_hospital", "emergency_contact_phone", "auto_siren_enabled", "auto_whatsapp_enabled"]
+    if any(k in d for k in med_keys):
+        med = UserMedicalProfile.query.filter_by(user_id=user.id).first()
+        if not med:
+            med = UserMedicalProfile(user_id=user.id)
+            db.session.add(med)
+        if "blood_group" in d: med.blood_group = (d["blood_group"] or "B+")[:10]
+        if "allergies" in d: med.allergies = (d["allergies"] or "")[:255]
+        if "medical_notes" in d: med.medical_notes = d["medical_notes"] or ""
+        if "home_city" in d: med.home_city = (d["home_city"] or "")[:120]
+        if "emergency_hospital" in d: med.emergency_hospital = (d["emergency_hospital"] or "")[:150]
+        if "emergency_contact_phone" in d: med.emergency_contact_phone = (d["emergency_contact_phone"] or "")[:20]
+        if "auto_siren_enabled" in d: med.auto_siren_enabled = bool(d["auto_siren_enabled"])
+        if "auto_whatsapp_enabled" in d: med.auto_whatsapp_enabled = bool(d["auto_whatsapp_enabled"])
+
     db.session.commit()
     return jsonify(user=user.to_dict())
+
+@bp.get("/user/medical-profile")
+@login_required()
+def get_medical_profile(user):
+    prof = UserMedicalProfile.query.filter_by(user_id=user.id).first()
+    if not prof:
+        prof = UserMedicalProfile(user_id=user.id)
+        db.session.add(prof)
+        db.session.commit()
+    return jsonify(medical_profile=prof.to_dict())
+
+@bp.put("/user/medical-profile")
+@login_required()
+def update_medical_profile(user):
+    d = request.get_json(silent=True) or {}
+    prof = UserMedicalProfile.query.filter_by(user_id=user.id).first()
+    if not prof:
+        prof = UserMedicalProfile(user_id=user.id)
+        db.session.add(prof)
+    if "blood_group" in d: prof.blood_group = (d["blood_group"] or "B+")[:10]
+    if "allergies" in d: prof.allergies = (d["allergies"] or "")[:255]
+    if "medical_notes" in d: prof.medical_notes = d["medical_notes"] or ""
+    if "home_city" in d: prof.home_city = (d["home_city"] or "")[:120]
+    if "emergency_hospital" in d: prof.emergency_hospital = (d["emergency_hospital"] or "")[:150]
+    if "emergency_contact_phone" in d: prof.emergency_contact_phone = (d["emergency_contact_phone"] or "")[:20]
+    if "auto_siren_enabled" in d: prof.auto_siren_enabled = bool(d["auto_siren_enabled"])
+    if "auto_whatsapp_enabled" in d: prof.auto_whatsapp_enabled = bool(d["auto_whatsapp_enabled"])
+    db.session.commit()
+    return jsonify(medical_profile=prof.to_dict(), user=user.to_dict())
 
 @bp.post("/auth/change-password")
 @login_required()
