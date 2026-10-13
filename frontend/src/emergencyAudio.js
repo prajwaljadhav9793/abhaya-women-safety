@@ -231,3 +231,4 @@ export async function captureEmergencyCoordinates(fallbackHints = []) {
   saveEmergencyLocation(defaultLoc.lat, defaultLoc.lng);
   return defaultLoc;
 }
+
