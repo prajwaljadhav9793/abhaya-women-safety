@@ -1725,6 +1725,88 @@ export default function ReportHazard() {
                       );
                     })()}
 
+                    {/* Designated Police Officer In-Charge Card */}
+                    {r.officer_in_charge && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          flexWrap: "wrap",
+                          gap: 12,
+                          padding: "12px 14px",
+                          background: "linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 58, 138, 0.35))",
+                          border: "1px solid rgba(59, 130, 246, 0.4)",
+                          borderRadius: 10,
+                          marginBottom: 12
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 8,
+                              background: "linear-gradient(135deg, #1d4ed8, #0284c7)",
+                              display: "grid",
+                              placeItems: "center",
+                              fontSize: "18px",
+                              flexShrink: 0
+                            }}
+                          >
+                            👮
+                          </div>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <b style={{ color: "#fff", fontSize: "0.9rem" }}>
+                                Officer In-Charge: {r.officer_in_charge.officer_name}
+                              </b>
+                              <span
+                                style={{
+                                  fontSize: "0.68rem",
+                                  background: "rgba(59, 130, 246, 0.25)",
+                                  color: "#93c5fd",
+                                  border: "1px solid rgba(59, 130, 246, 0.4)",
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  fontWeight: 700
+                                }}
+                              >
+                                {r.officer_in_charge.badge_number}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "0.76rem", color: "#94a3b8", marginTop: 2 }}>
+                              {r.officer_in_charge.designation} &bull; {r.officer_in_charge.department || r.officer_in_charge.police_station}
+                            </div>
+                          </div>
+                        </div>
+
+                        {r.officer_in_charge.contact_phone && (
+                          <div>
+                            <a
+                              href={`tel:${r.officer_in_charge.contact_phone.replace(/\D/g, "")}`}
+                              className="btn sm"
+                              style={{
+                                background: "rgba(59, 130, 246, 0.2)",
+                                borderColor: "#3b82f6",
+                                color: "#93c5fd",
+                                textDecoration: "none",
+                                fontSize: "0.75rem",
+                                padding: "4px 10px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                fontWeight: 700
+                              }}
+                              title="Direct call investigating officer"
+                            >
+                              📞 Call Officer: {r.officer_in_charge.contact_phone}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Official Review Feedback Note */}
                     {r.review_reason && (
                       <div

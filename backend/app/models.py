@@ -133,6 +133,9 @@ class IncidentReport(db.Model):
                        default="pending", nullable=False, index=True)
     is_demo = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=now); updated_at = db.Column(db.DateTime, default=now, onupdate=now)
+    assigned_officer_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    assigned_officer = db.relationship("User", foreign_keys=[assigned_officer_id])
     evidence = db.relationship("IncidentEvidence", backref="report", cascade="all, delete-orphan")
 
 class IncidentEvidence(db.Model):

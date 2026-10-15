@@ -849,12 +849,75 @@ def get_jurisdiction_police_station(lat, lng, location_label=""):
         "services": ps.get("services", [])
     }
 
+def get_officer_in_charge_details(r):
+    """
+    Returns the designated Police Officer In-Charge / Investigating Officer for an incident report.
+    Checks:
+    1. Direct assigned_officer_id on report
+    2. Most recent AdminAction (review_report)
+    3. Precinct Duty Officer fallback with station details
+    """
+    officer_user = None
+    if getattr(r, "assigned_officer_id", None):
+        officer_user = db.session.get(User, r.assigned_officer_id)
+
+    last_action = None
+    if not officer_user:
+        last_action = AdminAction.query.filter_by(target_type="report", target_id=r.id).order_by(AdminAction.created_at.desc()).first()
+        if last_action and last_action.admin_id:
+            officer_user = db.session.get(User, last_action.admin_id)
+            if officer_user and not getattr(r, "assigned_officer_id", None):
+                try:
+                    r.assigned_officer_id = officer_user.id
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
+    ps = get_jurisdiction_police_station(r.lat, r.lng, r.location_label)
+
+    if officer_user:
+        prof = getattr(officer_user, "officer_profile", None)
+        badge = prof.badge_number if prof and prof.badge_number else f"MH-POL-{officer_user.id:04d}"
+        desig = prof.designation if prof and prof.designation else "Police Sub-Inspector (PSI) / Case Officer"
+        dept = prof.department if prof and prof.department else ps.get("name", "Police Precinct")
+        phone = officer_user.phone or ps.get("phone", "112")
+        assigned_dt = last_action.created_at if last_action else (getattr(r, "updated_at", None) or r.created_at)
+
+        return {
+            "officer_id": officer_user.id,
+            "officer_name": officer_user.full_name,
+            "badge_number": badge,
+            "designation": desig,
+            "department": dept,
+            "police_station": ps.get("name", "Jurisdictional Police Station"),
+            "contact_phone": phone,
+            "email": officer_user.email,
+            "status_in_charge": "Assigned Case Officer & Investigator",
+            "assigned_at": assigned_dt.isoformat() if assigned_dt else r.created_at.isoformat()
+        }
+    else:
+        # Default precinct duty officer in-charge
+        return {
+            "officer_id": None,
+            "officer_name": f"Duty Officer In-Charge ({ps.get('name', 'Police Station')})",
+            "badge_number": f"DUTY-{ps.get('id', 'KOP').upper()}",
+            "designation": "Police Inspector / Precinct Desk In-Charge",
+            "department": ps.get("name", "Shahupuri Police Precinct"),
+            "police_station": ps.get("name", "Jurisdictional Police Station"),
+            "contact_phone": ps.get("phone", "112"),
+            "email": "police.desk@kolhapur.gov.in",
+            "status_in_charge": "Precinct Desk Assigned",
+            "assigned_at": r.created_at.isoformat()
+        }
+
 def rdict(r, admin=False):
     last = AdminAction.query.filter_by(target_type="report", target_id=r.id).order_by(AdminAction.id.desc()).first()
     ps = get_jurisdiction_police_station(r.lat, r.lng, r.location_label)
+    officer_info = get_officer_in_charge_details(r)
     d = dict(id=r.id, category=r.category, description=r.description, incident_time=r.incident_time.isoformat(), lat=r.lat, lng=r.lng,
              location_label=r.location_label, severity=r.severity, status=r.status, is_demo=r.is_demo, created_at=r.created_at.isoformat(),
              police_station=ps,
+             officer_in_charge=officer_info,
              review_reason=last.reason if last else None, evidence=[dict(id=e.id, name=e.original_name, size=e.size_bytes) for e in r.evidence])
     if admin:
         d["user_id"] = r.user_id
@@ -1450,7 +1513,8 @@ def pdf_incident(u, rid):
         db.session.commit()
     target_user = db.session.get(User, r.user_id) or u
     admin_actions = AdminAction.query.filter_by(target_type="report", target_id=r.id).order_by(AdminAction.created_at.desc()).all()
-    buf = build_incident_pdf(r, target_user, admin_actions=admin_actions)
+    officer_info = get_officer_in_charge_details(r)
+    buf = build_incident_pdf(r, target_user, admin_actions=admin_actions, officer_in_charge=officer_info)
     return send_pdf(buf, f"abhaya_incident_dossier_{r.id}.pdf")
 
 # ---------------- notifications ----------------
@@ -1525,7 +1589,12 @@ def a_review(u, rid):
         
     old = r.status
     r.status = target_status
+    r.assigned_officer_id = u.id
     audit(u, "review_report", "report", r.id, old, r.status, reason[:500])
+    
+    officer_prof = getattr(u, "officer_profile", None)
+    officer_title = f"{officer_prof.designation} {u.full_name}" if officer_prof else f"Officer {u.full_name}"
+    badge_str = f" [Badge #{officer_prof.badge_number}]" if officer_prof else ""
     
     status_label_map = {
         "verified": "VERIFIED & DISPATCHED",
@@ -1539,10 +1608,10 @@ def a_review(u, rid):
     db.session.add(UserNotification(
         user_id=r.user_id,
         title=f"Complaint #{r.id} Status: {status_label}",
-        body=f"Your complaint regarding '{r.category}' was reviewed by authority: {reason}"
+        body=f"Your complaint regarding '{r.category}' was reviewed & taken in-charge by {officer_title}{badge_str}: {reason}"
     ))
     db.session.commit()
-    return jsonify(report=rdict(r, True), message=f"Complaint marked as {status_label}")
+    return jsonify(report=rdict(r, True), message=f"Complaint marked as {status_label} by {officer_title}")
 
 @bp.get("/admin/evidence")
 @login_required(["admin"])

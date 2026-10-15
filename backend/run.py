@@ -20,7 +20,8 @@ def bootstrap():
             "ALTER TABLE incident_evidence ADD COLUMN sha256_hash VARCHAR(64)",
             "ALTER TABLE incident_evidence ADD COLUMN is_sealed BOOLEAN DEFAULT TRUE",
             "ALTER TABLE sos_events ADD COLUMN patrol_unit VARCHAR(100)",
-            "ALTER TABLE sos_events ADD COLUMN dispatch_note VARCHAR(500)"
+            "ALTER TABLE sos_events ADD COLUMN dispatch_note VARCHAR(500)",
+            "ALTER TABLE incident_reports ADD COLUMN assigned_officer_id INTEGER"
         ]:
             try:
                 db.session.execute(text(sql))

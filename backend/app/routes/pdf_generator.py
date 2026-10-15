@@ -329,11 +329,11 @@ def build_statutory_footer(styles):
 # =========================================================================
 # 1. INDIVIDUAL INCIDENT REPORT PDF
 # =========================================================================
-def build_incident_pdf(report, user, admin_actions=None):
+def build_incident_pdf(report, user, admin_actions=None, officer_in_charge=None):
     """
     Build a comprehensive, legal-grade dossier for a single community or personal incident report.
     Includes GPS telemetry, maps hyperlink, complainant identity, full description narrative,
-    evidence chain of custody table, and statutory rights.
+    evidence chain of custody table, designated investigating officer in-charge, and statutory rights.
     """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -360,6 +360,29 @@ def build_incident_pdf(report, user, admin_actions=None):
         styles=styles,
     ))
 
+    # Resolve jurisdictional police station
+    try:
+        from app.routes.modules import get_jurisdiction_police_station
+        ps_info = get_jurisdiction_police_station(report.lat, report.lng, report.location_label)
+    except Exception:
+        ps_info = {"name": "Shahupuri Police Station", "address": "Station Road, Near Central Bus Stand, Kolhapur", "phone": "0231-2651033"}
+
+    # Resolve officer in-charge details
+    if not officer_in_charge:
+        try:
+            from app.routes.modules import get_officer_in_charge_details
+            officer_in_charge = get_officer_in_charge_details(report)
+        except Exception:
+            officer_in_charge = {
+                "officer_name": "Duty Officer In-Charge",
+                "badge_number": "DUTY-PRECINCT-DESK",
+                "designation": "Police Inspector / Precinct Desk In-Charge",
+                "department": ps_info.get("name", "Shahupuri Police Precinct"),
+                "police_station": ps_info.get("name", "Shahupuri Police Station"),
+                "contact_phone": ps_info.get("phone", "112"),
+                "status_in_charge": "Precinct Desk Assigned"
+            }
+
     # 2. Key Metadata Table
     story.append(Paragraph("1. INCIDENT METADATA & TELEMETRY", styles["SectionHeader"]))
 
@@ -370,12 +393,6 @@ def build_incident_pdf(report, user, admin_actions=None):
     )
 
     severity_label = {1: "1 - Minor / Informational", 2: "2 - Moderate Hazard", 3: "3 - High / Threatening", 4: "4 - Critical / Emergency"}.get(report.severity, f"{report.severity} / 4")
-
-    try:
-        from app.routes.modules import get_jurisdiction_police_station
-        ps_info = get_jurisdiction_police_station(report.lat, report.lng, report.location_label)
-    except Exception:
-        ps_info = {"name": "Shahupuri Police Station", "address": "Station Road, Near Central Bus Stand, Kolhapur", "phone": "0231-2651033"}
 
     ps_cell = f"<b>{ps_info.get('name', 'Police Station')}</b><br/><font size=7 color='#64748b'>{ps_info.get('address', '')} • Ph: {ps_info.get('phone', '112')}</font>"
 
@@ -410,6 +427,12 @@ def build_incident_pdf(report, user, admin_actions=None):
             Paragraph("<b>Emergency Desk:</b>", styles["MetaKey"]),
             Paragraph("<b>Dial 112 / 1091 (Women)</b><br/><font size=7 color='#64748b'>Certified Electronic Record</font>", styles["MetaVal"]),
         ],
+        [
+            Paragraph("<b>Officer In-Charge:</b>", styles["MetaKey"]),
+            Paragraph(f"<b>{officer_in_charge.get('officer_name', 'Investigating Officer')}</b><br/><font size=7 color='#64748b'>{officer_in_charge.get('designation', '')} • Badge: {officer_in_charge.get('badge_number', '')}</font>", styles["MetaVal"]),
+            Paragraph("<b>Officer Desk:</b>", styles["MetaKey"]),
+            Paragraph(f"<b>{officer_in_charge.get('status_in_charge', 'Assigned')}</b><br/><font size=7 color='#64748b'>Ph: {officer_in_charge.get('contact_phone', '112')}</font>", styles["MetaVal"]),
+        ],
     ]
 
     t_meta = Table(meta_rows, colWidths=[36 * mm, 51 * mm, 36 * mm, 51 * mm])
@@ -422,8 +445,40 @@ def build_incident_pdf(report, user, admin_actions=None):
     story.append(t_meta)
     story.append(Spacer(1, 4 * mm))
 
-    # 3. Incident Statement / Narrative Box
-    story.append(Paragraph("2. FORMAL INCIDENT STATEMENT & EVENT DESCRIPTION", styles["SectionHeader"]))
+    # 3. Police Investigation & Officer In-Charge Card
+    story.append(Paragraph("2. LAW ENFORCEMENT INVESTIGATION & CASE OFFICER IN-CHARGE", styles["SectionHeader"]))
+    officer_table_data = [
+        [
+            Paragraph("<b>Case Officer In-Charge:</b>", styles["MetaKey"]),
+            Paragraph(f"<b>{officer_in_charge.get('officer_name', 'Investigating Officer')}</b>", styles["MetaVal"]),
+            Paragraph("<b>Badge / Warrant ID:</b>", styles["MetaKey"]),
+            Paragraph(f"<b>{officer_in_charge.get('badge_number', 'N/A')}</b>", styles["MetaVal"]),
+        ],
+        [
+            Paragraph("<b>Rank / Official Designation:</b>", styles["MetaKey"]),
+            Paragraph(officer_in_charge.get("designation", "Police Sub-Inspector (PSI)"), styles["MetaVal"]),
+            Paragraph("<b>Assigned Station / Dept:</b>", styles["MetaKey"]),
+            Paragraph(officer_in_charge.get("department", ps_info.get("name", "Police Station")), styles["MetaVal"]),
+        ],
+        [
+            Paragraph("<b>Official Contact Phone:</b>", styles["MetaKey"]),
+            Paragraph(f"<b>{officer_in_charge.get('contact_phone', '112')}</b>", styles["MetaVal"]),
+            Paragraph("<b>Investigation Status:</b>", styles["MetaKey"]),
+            Paragraph(f"<b>{officer_in_charge.get('status_in_charge', 'Assigned Case Officer')}</b>", styles["MetaVal"]),
+        ],
+    ]
+    t_officer = Table(officer_table_data, colWidths=[40 * mm, 47 * mm, 40 * mm, 47 * mm])
+    t_officer.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("PADDING", (0, 0), (-1, -1), 4.5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(t_officer)
+    story.append(Spacer(1, 4 * mm))
+
+    # 4. Incident Statement / Narrative Box
+    story.append(Paragraph("3. FORMAL INCIDENT STATEMENT & EVENT DESCRIPTION", styles["SectionHeader"]))
     narrative_p = Paragraph(report.description or "No descriptive text provided.", styles["Narrative"])
     t_narrative = Table([[narrative_p]], colWidths=[174 * mm])
     t_narrative.setStyle(TableStyle([
@@ -434,15 +489,19 @@ def build_incident_pdf(report, user, admin_actions=None):
     story.append(t_narrative)
     story.append(Spacer(1, 4 * mm))
 
-    # 4. Review / Administrative Audit Notes
+    # 5. Review / Administrative Audit Notes
     review_text = getattr(report, "review_reason", None)
     if not review_text and admin_actions:
         first_act = admin_actions[0]
         review_text = getattr(first_act, "reason", None) or getattr(first_act, "new_value", None)
 
     if review_text:
-        story.append(Paragraph("3. OFFICIAL REVIEW & ADMINISTRATIVE AUDIT TRAIL", styles["SectionHeader"]))
-        t_review = Table([[Paragraph(f"<b>Administrative Review Finding / Reason:</b><br/>{review_text}", styles["BodyText"])]], colWidths=[174 * mm])
+        story.append(Paragraph("4. OFFICIAL POLICE REVIEW FINDINGS & DIRECTIVES", styles["SectionHeader"]))
+        review_lines = [
+            Paragraph(f"<b>Reviewing Authority:</b> <b>{officer_in_charge.get('officer_name', 'Police Authority')}</b> ({officer_in_charge.get('designation', 'Police In-Charge')} • Badge: {officer_in_charge.get('badge_number', 'N/A')})", styles["BodySmall"]),
+            Paragraph(f"<b>Official Review Finding / Reason:</b><br/>{review_text}", styles["BodyText"])
+        ]
+        t_review = Table([[KeepTogether(review_lines)]], colWidths=[174 * mm])
         t_review.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fdf4ff")),
             ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#d8b4fe")),
@@ -451,8 +510,8 @@ def build_incident_pdf(report, user, admin_actions=None):
         story.append(t_review)
         story.append(Spacer(1, 4 * mm))
 
-    # 5. Evidentiary Attachments Table
-    story.append(Paragraph("4. EVIDENTIARY ATTACHMENTS & CHAIN OF CUSTODY", styles["SectionHeader"]))
+    # 6. Evidentiary Attachments Table
+    story.append(Paragraph("5. EVIDENTIARY ATTACHMENTS & CHAIN OF CUSTODY", styles["SectionHeader"]))
     ev_list = getattr(report, "evidence", []) or []
     if ev_list:
         ev_headers = [
@@ -493,7 +552,27 @@ def build_incident_pdf(report, user, admin_actions=None):
         ]))
         story.append(t_empty)
 
-    # 6. Legal Rights & Statutory Footer
+    # 7. Official Law Enforcement Certification Seal
+    cert_text = (
+        f"<b>OFFICIAL LAW ENFORCEMENT ELECTRONIC CERTIFICATION & CASE RECORD:</b><br/>"
+        f"This complaint filing #{report.id} was formally received and placed under the charge of "
+        f"<b>{officer_in_charge.get('officer_name', 'Investigating Officer')}</b>, {officer_in_charge.get('designation', 'Police Sub-Inspector')} "
+        f"(Badge ID: <b>{officer_in_charge.get('badge_number', 'DUTY-DESK')}</b>) at <b>{officer_in_charge.get('department', 'Jurisdictional Police Precinct')}</b>. "
+        f"All incident timestamps, telemetry, and evidence hashes are preserved under Section 65B of the Indian Evidence Act, 1872."
+    )
+    t_cert = Table([[Paragraph(cert_text, styles["NoticeText"])]], colWidths=[174 * mm])
+    t_cert.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eff6ff")),
+        ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#3b82f6")),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(KeepTogether([
+        Spacer(1, 3 * mm),
+        t_cert,
+        Spacer(1, 2 * mm)
+    ]))
+
+    # 8. Legal Rights & Statutory Footer
     story.append(build_statutory_footer(styles))
 
     doc.build(story, canvasmaker=NumberedCanvas)

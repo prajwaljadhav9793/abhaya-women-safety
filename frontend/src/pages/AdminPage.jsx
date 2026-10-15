@@ -1340,6 +1340,31 @@ export default function AdminPage() {
                             </span>
                           </div>
                         )}
+                        {r.officer_in_charge && (
+                          <div
+                            style={{
+                              fontSize: "0.8rem",
+                              color: "#60a5fa",
+                              marginTop: 4,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              background: "rgba(59, 130, 246, 0.1)",
+                              border: "1px solid rgba(59, 130, 246, 0.25)",
+                              padding: "4px 8px",
+                              borderRadius: 6,
+                              width: "fit-content"
+                            }}
+                          >
+                            <ShieldCheck size={13} color="#60a5fa" />
+                            <span>
+                              <b>Officer In-Charge:</b> {r.officer_in_charge.officer_name}{" "}
+                              <span style={{ color: "#93c5fd", fontSize: "0.74rem" }}>
+                                ({r.officer_in_charge.badge_number} &bull; {r.officer_in_charge.designation})
+                              </span>
+                            </span>
+                          </div>
+                        )}
                         <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: 3 }}>
                           Incident Time: {new Date(r.incident_time).toLocaleString()} &bull; Filed:{" "}
                           {new Date(r.created_at).toLocaleString()}
