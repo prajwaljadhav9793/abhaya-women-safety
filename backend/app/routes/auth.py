@@ -7,42 +7,145 @@ from extensions import db, limiter
 from app.models import User, OfficerProfile, UserMedicalProfile
 from app.utils import EMAIL_RE, PHONE_RE, clean_phone, valid_password, login_required
 
+import re
+
 bp = Blueprint("auth", __name__)
 
+def find_user_by_identifier(ident):
+    """
+    Robust user lookup supporting:
+    - Case-insensitive email
+    - Cleaned mobile number
+    - Multi-format prefixes (+91, 91, 0, or raw 10 digits)
+    - 10-digit suffix matching
+    """
+    ident = (ident or "").strip()
+    if not ident:
+        return None
+        
+    ident_lower = ident.lower()
+    
+    # 1. Fast match: Case-insensitive email
+    u = User.query.filter(db.func.lower(User.email) == ident_lower).first()
+    if u:
+        return u
+        
+    # 2. Direct cleaned phone
+    cleaned = clean_phone(ident)
+    if cleaned:
+        u = User.query.filter(User.phone == cleaned).first()
+        if u:
+            return u
+            
+    # 3. Numeric variations for mobile numbers
+    digits = re.sub(r"\D", "", ident)
+    if digits:
+        candidates = {ident, cleaned, digits}
+        if len(digits) >= 10:
+            p10 = digits[-10:]
+            candidates.update([p10, f"+91{p10}", f"91{p10}", f"0{p10}"])
+            
+        u = User.query.filter(User.phone.in_(list(candidates))).first()
+        if u:
+            return u
+            
+        if len(digits) >= 10:
+            p10 = digits[-10:]
+            u = User.query.filter(User.phone.endswith(p10)).first()
+            if u:
+                return u
+    return None
+
 @bp.post("/auth/register")
-@limiter.limit("10 per hour")
+@limiter.limit("20 per hour")
 def register():
     d = request.get_json(silent=True) or {}
     name = (d.get("full_name") or "").strip()
     email = (d.get("email") or "").strip().lower()
     phone = clean_phone(d.get("phone"))
+    raw_pw = d.get("password") or ""
+    confirm_pw = d.get("confirm_password") or ""
+
     errors = {}
     if len(name) < 2: errors["full_name"] = "Enter your full name"
-    if not EMAIL_RE.match(email): errors["email"] = "Enter a valid email"
+    if not EMAIL_RE.match(email): errors["email"] = "Enter a valid email address"
     if not PHONE_RE.match(phone): errors["phone"] = "Enter a valid mobile number (10-15 digits)"
-    if not valid_password(d.get("password")): errors["password"] = "Min 8 characters with letters and numbers"
-    if d.get("password") != d.get("confirm_password"): errors["confirm_password"] = "Passwords do not match"
+    if not valid_password(raw_pw): errors["password"] = "Min 8 characters with letters and numbers"
+    if raw_pw != confirm_pw: errors["confirm_password"] = "Passwords do not match"
     if errors: return jsonify(error="Validation failed", fields=errors), 422
-    if User.query.filter((User.email == email) | (User.phone == phone)).first():
-        return jsonify(error="An account with this email or phone already exists"), 409
+
+    if find_user_by_identifier(email) or find_user_by_identifier(phone):
+        return jsonify(error="An account with this email or mobile number already exists"), 409
+
     u = User(full_name=name, email=email, phone=phone, role="user")  # role never from client
-    u.set_password(d["password"])
+    u.set_password(raw_pw)
     db.session.add(u)
-    try: db.session.commit()
+    try:
+        db.session.commit()
     except IntegrityError:
-        db.session.rollback(); return jsonify(error="Account already exists"), 409
-    return jsonify(user=u.to_dict()), 201
+        db.session.rollback()
+        return jsonify(error="An account with this email or mobile number already exists"), 409
+
+    token = create_access_token(identity=str(u.id))
+    return jsonify(
+        token=token,
+        user=u.to_dict(),
+        message="Account created successfully"
+    ), 201
 
 @bp.post("/auth/login")
-@limiter.limit("15 per minute")
+@limiter.limit("25 per minute")
 def login():
     d = request.get_json(silent=True) or {}
-    ident = (d.get("identifier") or "").strip().lower()
-    u = User.query.filter((User.email == ident) | (User.phone == clean_phone(ident))).first()
-    if not u or not u.check_password(d.get("password") or ""):
-        return jsonify(error="Invalid credentials"), 401
-    if not u.is_active: return jsonify(error="This account is deactivated"), 403
+    ident = (d.get("identifier") or "").strip()
+    raw_pw = d.get("password") or ""
+    pw_strip = raw_pw.strip()
+
+    if not ident:
+        return jsonify(error="Please enter your email or mobile number"), 422
+    if not raw_pw:
+        return jsonify(error="Please enter your password"), 422
+
+    u = find_user_by_identifier(ident)
+    if not u:
+        return jsonify(error="Account not found. Please verify your email or mobile number, or create a new account."), 401
+
+    if not u.check_password(raw_pw) and not u.check_password(pw_strip):
+        return jsonify(error="Incorrect password. Please verify your password or use Reset Password below."), 401
+
+    if not u.is_active:
+        return jsonify(error="This account is deactivated"), 403
+
     return jsonify(token=create_access_token(identity=str(u.id)), user=u.to_dict())
+
+@bp.post("/auth/reset-password")
+@limiter.limit("10 per hour")
+def reset_password():
+    d = request.get_json(silent=True) or {}
+    ident = (d.get("identifier") or "").strip()
+    new_pw = d.get("new_password") or ""
+    confirm_pw = d.get("confirm_password") or new_pw
+
+    if not ident:
+        return jsonify(error="Please provide your registered email or mobile number"), 422
+    if not valid_password(new_pw):
+        return jsonify(error="Password must be at least 8 characters with letters and numbers"), 422
+    if new_pw != confirm_pw:
+        return jsonify(error="Passwords do not match"), 422
+
+    u = find_user_by_identifier(ident)
+    if not u:
+        return jsonify(error="No account found with this email or mobile number"), 404
+
+    u.set_password(new_pw)
+    db.session.commit()
+
+    token = create_access_token(identity=str(u.id))
+    return jsonify(
+        token=token,
+        user=u.to_dict(),
+        message="Password updated successfully. You are now logged in."
+    ), 200
 
 @bp.get("/auth/me")
 @login_required()

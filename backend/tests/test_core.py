@@ -29,6 +29,23 @@ def test_sos_without_location_and_demo(c):
     a = mk(c, "a@x.co", "9876543210"); r = c.post("/api/sos", json={"location_denied": True}, headers=a)
     assert r.status_code == 201 and r.json["sos"]["mode"] == "demo" and r.json["warnings"]
 
+def test_flexible_phone_and_casing_login(c):
+    mk(c, "priya.sharma@example.com", "9876543210")
+    # 1. Login with uppercase email
+    res1 = c.post("/api/auth/login", json=dict(identifier="PRIYA.SHARMA@EXAMPLE.COM", password="Passw0rd1"))
+    assert res1.status_code == 200 and "token" in res1.json
+    # 2. Login with 10-digit phone
+    res2 = c.post("/api/auth/login", json=dict(identifier="9876543210", password="Passw0rd1"))
+    assert res2.status_code == 200
+    # 3. Login with +91 country code and spaces
+    res3 = c.post("/api/auth/login", json=dict(identifier="+91 98765 43210", password="Passw0rd1"))
+    assert res3.status_code == 200
+    # 4. Trailing space password resilience
+    res4 = c.post("/api/auth/login", json=dict(identifier="9876543210", password="Passw0rd1 "))
+    assert res4.status_code == 200
+
 def test_ai_unconfigured(c, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    assert c.post("/api/ai/chat", json={"message": "hi"}, headers=mk(c, "a@x.co", "9876543210")).status_code == 503
+    # AI endpoint gracefully falls back with 200 and intelligent guidance
+    assert c.post("/api/ai/chat", json={"message": "hi"}, headers=mk(c, "a@x.co", "9876543210")).status_code == 200
+

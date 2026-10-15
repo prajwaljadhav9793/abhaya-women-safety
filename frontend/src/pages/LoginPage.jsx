@@ -18,7 +18,8 @@ import {
   KeyRound,
   FileCheck2,
   UploadCloud,
-  UserPlus
+  UserPlus,
+  RefreshCw
 } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -37,15 +38,32 @@ export default function LoginPage({ initialPortal }) {
     initialPortal || (portalQuery === "admin" || portalQuery === "police" || isPolicePath ? "police" : "citizen")
   );
 
-  // Sub-mode for police portal: "login" or "register"
-  const [policeMode, setPoliceMode] = useState("login");
+  // Sub-mode: "login" | "register" | "reset"
+  const [subMode, setSubMode] = useState("login");
 
   // Form State: Login
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Form State: Citizen Registration
+  const [citizenForm, setCitizenForm] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirm_password: ""
+  });
+
+  // Form State: Password Reset
+  const [resetForm, setResetForm] = useState({
+    identifier: "",
+    new_password: "",
+    confirm_password: ""
+  });
 
   // Form State: Officer Registration with ID Proof
   const [officerForm, setOfficerForm] = useState({
@@ -71,15 +89,16 @@ export default function LoginPage({ initialPortal }) {
 
   const handlePortalSwitch = (newPortal) => {
     setPortal(newPortal);
-    setPoliceMode("login");
+    setSubMode("login");
     setError("");
+    setResetSuccess("");
     setIdentifier("");
     setPassword("");
   };
 
   const handleLoginSubmit = async (e, customId, customPw) => {
     if (e) e.preventDefault();
-    const id = customId !== undefined ? customId : identifier;
+    const id = (customId !== undefined ? customId : identifier).trim();
     const pw = customPw !== undefined ? customPw : password;
 
     if (!id || !pw) {
@@ -106,6 +125,113 @@ export default function LoginPage({ initialPortal }) {
       }
     } catch (err) {
       setError(err.message || "Invalid credentials. Please verify your login details.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCitizenRegister = async (e) => {
+    e.preventDefault();
+    setError("");
+    const name = citizenForm.full_name.trim();
+    const email = citizenForm.email.trim();
+    const phone = citizenForm.phone.trim();
+    const pw = citizenForm.password;
+    const cpw = citizenForm.confirm_password;
+
+    if (!name || !email || !phone || !pw) {
+      setError("Please complete all personal and contact fields.");
+      return;
+    }
+    if (pw.length < 8) {
+      setError("Password must be at least 8 characters with letters and numbers.");
+      return;
+    }
+    if (pw !== cpw) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const data = await api("/auth/register", {
+        method: "POST",
+        body: {
+          full_name: name,
+          email: email,
+          phone: phone,
+          password: pw,
+          confirm_password: cpw
+        }
+      });
+
+      if (data.token && data.user) {
+        login(data.token, data.user);
+        navigate("/dashboard");
+      } else {
+        setSubMode("login");
+        setIdentifier(email);
+        setError("");
+      }
+    } catch (err) {
+      const fieldDetails = err.fields ? Object.values(err.fields).join(", ") : "";
+      setError(fieldDetails ? `${err.message}: ${fieldDetails}` : (err.message || "Account creation failed."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setResetSuccess("");
+    const id = resetForm.identifier.trim();
+    const newPw = resetForm.new_password;
+    const confirmPw = resetForm.confirm_password;
+
+    if (!id) {
+      setError("Please enter your registered email or mobile number.");
+      return;
+    }
+    if (!newPw || newPw.length < 8) {
+      setError("New password must be at least 8 characters with letters and numbers.");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const data = await api("/auth/reset-password", {
+        method: "POST",
+        body: {
+          identifier: id,
+          new_password: newPw,
+          confirm_password: confirmPw
+        }
+      });
+
+      setResetSuccess(data.message || "Password updated successfully! Logging you in...");
+      if (data.token && data.user) {
+        setTimeout(() => {
+          login(data.token, data.user);
+          if (data.user?.role === "admin" || portal === "police") {
+            navigate("/admin");
+          } else {
+            navigate("/dashboard");
+          }
+        }, 1200);
+      } else {
+        setTimeout(() => {
+          setSubMode("login");
+          setIdentifier(id);
+          setResetSuccess("");
+        }, 1500);
+      }
+    } catch (err) {
+      setError(err.message || "Password reset failed. Please verify your account identifier.");
     } finally {
       setBusy(false);
     }
@@ -139,14 +265,14 @@ export default function LoginPage({ initialPortal }) {
 
     try {
       const formData = new FormData();
-      formData.append("full_name", officerForm.full_name);
-      formData.append("email", officerForm.email);
-      formData.append("phone", officerForm.phone);
-      formData.append("badge_number", officerForm.badge_number);
-      formData.append("department", officerForm.department);
-      formData.append("designation", officerForm.designation);
-      formData.append("id_proof_type", officerForm.id_proof_type);
-      formData.append("id_proof_number", officerForm.id_proof_number);
+      formData.append("full_name", officerForm.full_name.trim());
+      formData.append("email", officerForm.email.trim());
+      formData.append("phone", officerForm.phone.trim());
+      formData.append("badge_number", officerForm.badge_number.trim());
+      formData.append("department", officerForm.department.trim());
+      formData.append("designation", officerForm.designation.trim());
+      formData.append("id_proof_type", officerForm.id_proof_type.trim());
+      formData.append("id_proof_number", officerForm.id_proof_number.trim());
       formData.append("password", officerForm.password);
       formData.append("confirm_password", officerForm.confirm_password);
 
@@ -154,7 +280,6 @@ export default function LoginPage({ initialPortal }) {
         formData.append("id_proof_file", idProofFile);
       }
 
-      // Use standard api() helper to automatically route to Render backend BASE and handle FormData
       const data = await api("/auth/register-officer", {
         method: "POST",
         form: formData
@@ -173,12 +298,13 @@ export default function LoginPage({ initialPortal }) {
   const instantDemoLogin = (role) => {
     if (role === "admin" || role === "police") {
       setPortal("police");
-      setPoliceMode("login");
+      setSubMode("login");
       setIdentifier("demo.admin@abhaya.test");
       setPassword("Admin@12345");
       handleLoginSubmit(null, "demo.admin@abhaya.test", "Admin@12345");
     } else {
       setPortal("citizen");
+      setSubMode("login");
       setIdentifier("demo.user@abhaya.test");
       setPassword("Demo@12345");
       handleLoginSubmit(null, "demo.user@abhaya.test", "Demo@12345");
@@ -186,7 +312,10 @@ export default function LoginPage({ initialPortal }) {
   };
 
   const isPolice = portal === "police";
-  const isOfficerRegister = isPolice && policeMode === "register";
+  const isOfficerRegister = isPolice && subMode === "register";
+  const isCitizenRegister = !isPolice && subMode === "register";
+  const isReset = subMode === "reset";
+  const isLogin = subMode === "login";
 
   return (
     <div
@@ -204,7 +333,7 @@ export default function LoginPage({ initialPortal }) {
       }}
     >
       {/* Top Breadcrumb / Return */}
-      <div style={{ width: "100%", maxWidth: isOfficerRegister ? 560 : 460, marginBottom: 16 }}>
+      <div style={{ width: "100%", maxWidth: (isOfficerRegister || isCitizenRegister) ? 560 : 460, marginBottom: 16 }}>
         <Link
           to="/"
           style={{
@@ -225,7 +354,7 @@ export default function LoginPage({ initialPortal }) {
       <div
         style={{
           width: "100%",
-          maxWidth: isOfficerRegister ? 560 : 460,
+          maxWidth: (isOfficerRegister || isCitizenRegister) ? 560 : 460,
           background: isPolice
             ? "rgba(15, 23, 42, 0.85)"
             : "rgba(23, 17, 39, 0.85)",
@@ -273,10 +402,14 @@ export default function LoginPage({ initialPortal }) {
               color: "#fff"
             }}
           >
-            {isPolice
+            {isReset
+              ? "Reset Account Password"
+              : isPolice
               ? isOfficerRegister
                 ? "Police Clearance & Account Creation"
                 : "Police & Authority Gateway"
+              : isCitizenRegister
+              ? "Create Citizen Account"
               : "Citizen Safety Portal"}
           </h2>
           <p
@@ -286,10 +419,14 @@ export default function LoginPage({ initialPortal }) {
               color: isPolice ? "#93c5fd" : "#c4b5fd"
             }}
           >
-            {isPolice
+            {isReset
+              ? "Enter your registered email or 10-digit mobile to set a new password"
+              : isPolice
               ? isOfficerRegister
                 ? "Official officer registration with required badge and government ID proof"
                 : "Official command terminal for law enforcement & district officials"
+              : isCitizenRegister
+              ? "Join the 24/7 emergency dispatch and women safety shield"
               : "Sign in to access your personal safety shield & live monitoring"}
           </p>
         </div>
@@ -360,8 +497,8 @@ export default function LoginPage({ initialPortal }) {
           </button>
         </div>
 
-        {/* Sub-toggle for Police Portal: Sign In vs Register with ID Proof */}
-        {isPolice && (
+        {/* Sub-toggle: Citizen Mode (Sign In vs Create Account) */}
+        {!isPolice && !isReset && (
           <div
             style={{
               display: "grid",
@@ -375,16 +512,80 @@ export default function LoginPage({ initialPortal }) {
             <button
               type="button"
               onClick={() => {
-                setPoliceMode("login");
+                setSubMode("login");
                 setError("");
+                setResetSuccess("");
               }}
               style={{
                 padding: "8px 12px",
                 borderRadius: 8,
                 border: "none",
-                background: policeMode === "login" ? "rgba(59, 130, 246, 0.25)" : "rgba(255, 255, 255, 0.05)",
-                color: policeMode === "login" ? "#60a5fa" : "#94a3b8",
-                fontSize: "0.8rem",
+                background: subMode === "login" ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                color: subMode === "login" ? "#c084fc" : "#94a3b8",
+                fontSize: "0.82rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6
+              }}
+            >
+              <KeyRound size={14} /> Citizen Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSubMode("register");
+                setError("");
+                setResetSuccess("");
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "none",
+                background: subMode === "register" ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                color: subMode === "register" ? "#c084fc" : "#94a3b8",
+                fontSize: "0.82rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6
+              }}
+            >
+              <UserPlus size={14} /> Create Account
+            </button>
+          </div>
+        )}
+
+        {/* Sub-toggle: Police Mode (Sign In vs Register with ID Proof) */}
+        {isPolice && !isReset && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+              marginBottom: 18,
+              borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+              paddingBottom: 14
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setSubMode("login");
+                setError("");
+                setResetSuccess("");
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "none",
+                background: subMode === "login" ? "rgba(59, 130, 246, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                color: subMode === "login" ? "#60a5fa" : "#94a3b8",
+                fontSize: "0.82rem",
                 fontWeight: 700,
                 cursor: "pointer",
                 display: "flex",
@@ -398,16 +599,17 @@ export default function LoginPage({ initialPortal }) {
             <button
               type="button"
               onClick={() => {
-                setPoliceMode("register");
+                setSubMode("register");
                 setError("");
+                setResetSuccess("");
               }}
               style={{
                 padding: "8px 12px",
                 borderRadius: 8,
                 border: "none",
-                background: policeMode === "register" ? "rgba(59, 130, 246, 0.25)" : "rgba(255, 255, 255, 0.05)",
-                color: policeMode === "register" ? "#60a5fa" : "#94a3b8",
-                fontSize: "0.8rem",
+                background: subMode === "register" ? "rgba(59, 130, 246, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                color: subMode === "register" ? "#60a5fa" : "#94a3b8",
+                fontSize: "0.82rem",
                 fontWeight: 700,
                 cursor: "pointer",
                 display: "flex",
@@ -422,7 +624,7 @@ export default function LoginPage({ initialPortal }) {
         )}
 
         {/* 1-Click Fast Demo Credentials Box (Only in Login Mode) */}
-        {!isOfficerRegister && (
+        {isLogin && (
           <div
             style={{
               background: isPolice
@@ -568,7 +770,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="e.g. Inspector Ramesh Patil"
                   value={officerForm.full_name}
                   onChange={(e) => setOfficerForm({ ...officerForm, full_name: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
 
@@ -582,7 +784,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="officer@police.gov.in"
                   value={officerForm.email}
                   onChange={(e) => setOfficerForm({ ...officerForm, email: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
             </div>
@@ -598,7 +800,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="9876543210"
                   value={officerForm.phone}
                   onChange={(e) => setOfficerForm({ ...officerForm, phone: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
 
@@ -612,7 +814,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="e.g. MH-KOP-4921"
                   value={officerForm.badge_number}
                   onChange={(e) => setOfficerForm({ ...officerForm, badge_number: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(59,130,246,0.4)", background: "rgba(30,58,138,0.2)", color: "#60a5fa", fontWeight: 700, fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(59,130,246,0.4)", background: "rgba(30,58,138,0.2)", color: "#60a5fa", fontWeight: 700, fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
             </div>
@@ -629,7 +831,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="Police Sub-Inspector / DSP"
                   value={officerForm.designation}
                   onChange={(e) => setOfficerForm({ ...officerForm, designation: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
 
@@ -643,7 +845,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="Shahupuri Police Precinct"
                   value={officerForm.department}
                   onChange={(e) => setOfficerForm({ ...officerForm, department: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
             </div>
@@ -657,7 +859,7 @@ export default function LoginPage({ initialPortal }) {
                 <select
                   value={officerForm.id_proof_type}
                   onChange={(e) => setOfficerForm({ ...officerForm, id_proof_type: e.target.value })}
-                  style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(15,23,42,0.9)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(15,23,42,0.9)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 >
                   <option value="Police Warrant Card / Service ID">Police Warrant Card / Service ID</option>
                   <option value="Government Law Enforcement ID">Government Law Enforcement ID</option>
@@ -677,7 +879,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="WARR-2024-8841"
                   value={officerForm.id_proof_number}
                   onChange={(e) => setOfficerForm({ ...officerForm, id_proof_number: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
             </div>
@@ -685,7 +887,7 @@ export default function LoginPage({ initialPortal }) {
             {/* ID Proof Document File Upload */}
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
-                Upload ID Proof Document / Photo (PDF, PNG, JPG) *
+                Upload ID Proof Document / Photo (PDF, PNG, JPG)
               </label>
               <div
                 style={{
@@ -746,7 +948,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="Min 8 chars"
                   value={officerForm.password}
                   onChange={(e) => setOfficerForm({ ...officerForm, password: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
 
@@ -760,7 +962,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder="Re-enter password"
                   value={officerForm.confirm_password}
                   onChange={(e) => setOfficerForm({ ...officerForm, confirm_password: e.target.value })}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
             </div>
@@ -811,7 +1013,7 @@ export default function LoginPage({ initialPortal }) {
             <div style={{ textAlign: "center", marginTop: 12 }}>
               <button
                 type="button"
-                onClick={() => setPoliceMode("login")}
+                onClick={() => setSubMode("login")}
                 style={{
                   background: "none",
                   border: "none",
@@ -825,8 +1027,396 @@ export default function LoginPage({ initialPortal }) {
               </button>
             </div>
           </form>
+        ) : isCitizenRegister ? (
+          /* MODE B: CITIZEN REGISTRATION FORM */
+          <form onSubmit={handleCitizenRegister}>
+            <div
+              style={{
+                background: "rgba(168, 85, 247, 0.1)",
+                border: "1px solid rgba(168, 85, 247, 0.3)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 16,
+                fontSize: "0.8rem",
+                color: "#e9d5ff"
+              }}
+            >
+              <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <Sparkles size={16} color="#c084fc" />
+                <span>Join Abhaya Women &amp; Citizen Safety Network</span>
+              </div>
+              <span>
+                Create your verified safety profile to activate 24/7 instant SOS, AI safety routing, and family live location tracking.
+              </span>
+            </div>
+
+            {/* Full Name */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                Full Name *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Ananya Sharma"
+                value={citizenForm.full_name}
+                onChange={(e) => setCitizenForm({ ...citizenForm, full_name: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(255, 255, 255, 0.15)",
+                  background: "rgba(0, 0, 0, 0.4)",
+                  color: "#fff",
+                  fontSize: "0.88rem",
+                  boxSizing: "border-box"
+                }}
+              />
+            </div>
+
+            {/* Email & Phone */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="ananya@example.com"
+                  value={citizenForm.email}
+                  onChange={(e) => setCitizenForm({ ...citizenForm, email: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  Mobile Number (10 digits) *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="9876543210"
+                  value={citizenForm.phone}
+                  onChange={(e) => setCitizenForm({ ...citizenForm, phone: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Passwords */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  Password (min 8 chars) *
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Min 8 letters & numbers"
+                  value={citizenForm.password}
+                  onChange={(e) => setCitizenForm({ ...citizenForm, password: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  Confirm Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Re-type password"
+                  value={citizenForm.confirm_password}
+                  onChange={(e) => setCitizenForm({ ...citizenForm, confirm_password: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 12px",
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "1px solid rgba(239, 68, 68, 0.35)",
+                  borderRadius: 8,
+                  color: "#fca5a5",
+                  fontSize: "0.82rem",
+                  marginBottom: 16
+                }}
+              >
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="btn"
+              disabled={busy}
+              style={{
+                width: "100%",
+                padding: "12px",
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: "0.95rem",
+                background: "linear-gradient(135deg, #9333ea, #db2777)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                boxShadow: "0 4px 15px rgba(147, 51, 234, 0.4)",
+                cursor: busy ? "not-allowed" : "pointer"
+              }}
+            >
+              {busy ? "Creating Safety Profile..." : "✓ Create Account & Enter Safety Hub →"}
+            </button>
+
+            <div style={{ textAlign: "center", marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => setSubMode("login")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#c084fc",
+                  fontSize: "0.82rem",
+                  textDecoration: "underline",
+                  cursor: "pointer"
+                }}
+              >
+                &larr; Already have an account? Sign in here
+              </button>
+            </div>
+          </form>
+        ) : isReset ? (
+          /* MODE C: RESET PASSWORD FORM */
+          <form onSubmit={handleResetPassword}>
+            <div
+              style={{
+                background: isPolice ? "rgba(59, 130, 246, 0.12)" : "rgba(168, 85, 247, 0.12)",
+                border: isPolice ? "1px solid rgba(59, 130, 246, 0.3)" : "1px solid rgba(168, 85, 247, 0.3)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 16,
+                fontSize: "0.82rem",
+                color: isPolice ? "#bfdbfe" : "#e9d5ff"
+              }}
+            >
+              <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <RefreshCw size={16} />
+                <span>Instant Account Password Recovery</span>
+              </div>
+              <span>
+                Enter your registered email address or 10-digit mobile number, along with your new password to regain immediate access.
+              </span>
+            </div>
+
+            {/* Identifier */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                Registered Email or Mobile Number *
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. ananya@example.com or 9876543210"
+                  value={resetForm.identifier}
+                  onChange={(e) => setResetForm({ ...resetForm, identifier: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px 10px 38px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+                <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }}>
+                  <Mail size={16} />
+                </div>
+              </div>
+            </div>
+
+            {/* New Password & Confirm Password */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  New Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Min 8 chars"
+                  value={resetForm.new_password}
+                  onChange={(e) => setResetForm({ ...resetForm, new_password: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "#cbd5e1", marginBottom: 4 }}>
+                  Confirm Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Re-type new password"
+                  value={resetForm.confirm_password}
+                  onChange={(e) => setResetForm({ ...resetForm, confirm_password: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    background: "rgba(0, 0, 0, 0.4)",
+                    color: "#fff",
+                    fontSize: "0.88rem",
+                    boxSizing: "border-box"
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Success Message */}
+            {resetSuccess && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 12px",
+                  background: "rgba(34, 197, 94, 0.15)",
+                  border: "1px solid rgba(34, 197, 94, 0.35)",
+                  borderRadius: 8,
+                  color: "#86efac",
+                  fontSize: "0.82rem",
+                  marginBottom: 16
+                }}
+              >
+                <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+                <span>{resetSuccess}</span>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {error && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 12px",
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "1px solid rgba(239, 68, 68, 0.35)",
+                  borderRadius: 8,
+                  color: "#fca5a5",
+                  fontSize: "0.82rem",
+                  marginBottom: 16
+                }}
+              >
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="btn"
+              disabled={busy}
+              style={{
+                width: "100%",
+                padding: "12px",
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: "0.95rem",
+                background: isPolice
+                  ? "linear-gradient(135deg, #1d4ed8, #0284c7)"
+                  : "linear-gradient(135deg, #9333ea, #db2777)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                cursor: busy ? "not-allowed" : "pointer"
+              }}
+            >
+              {busy ? "Updating Credentials..." : "✓ Reset Password & Sign In Now →"}
+            </button>
+
+            <div style={{ textAlign: "center", marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => { setSubMode("login"); setError(""); setResetSuccess(""); }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: isPolice ? "#93c5fd" : "#c084fc",
+                  fontSize: "0.82rem",
+                  textDecoration: "underline",
+                  cursor: "pointer"
+                }}
+              >
+                &larr; Remember your password? Return to Sign In
+              </button>
+            </div>
+          </form>
         ) : (
-          /* MODE B: STANDARD LOGIN FORM */
+          /* MODE D: STANDARD LOGIN FORM */
           <form onSubmit={handleLoginSubmit}>
             {/* Official Authority Badge Notice for Police */}
             {isPolice && (
@@ -872,7 +1462,7 @@ export default function LoginPage({ initialPortal }) {
                   placeholder={
                     isPolice
                       ? "demo.admin@abhaya.test or official email"
-                      : "demo.user@abhaya.test or mobile number"
+                      : "demo.user@abhaya.test or 10-digit mobile"
                   }
                   required
                   style={{
@@ -921,6 +1511,27 @@ export default function LoginPage({ initialPortal }) {
                 >
                   {isPolice ? "Security Passcode" : "Password"}
                 </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetForm(prev => ({ ...prev, identifier: identifier.trim() }));
+                    setSubMode("reset");
+                    setError("");
+                    setResetSuccess("");
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: isPolice ? "#60a5fa" : "#c084fc",
+                    fontSize: "0.76rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    padding: 0
+                  }}
+                >
+                  Forgot password?
+                </button>
               </div>
 
               <div style={{ position: "relative" }}>
@@ -976,13 +1587,10 @@ export default function LoginPage({ initialPortal }) {
               </div>
             </div>
 
-            {/* Error Message */}
+            {/* Error Message with Smart Recovery Suggestions */}
             {error && (
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
                   padding: "10px 12px",
                   background: "rgba(239, 68, 68, 0.15)",
                   border: "1px solid rgba(239, 68, 68, 0.35)",
@@ -992,8 +1600,38 @@ export default function LoginPage({ initialPortal }) {
                   marginBottom: 16
                 }}
               >
-                <AlertCircle size={16} style={{ flexShrink: 0 }} />
-                <span>{error}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                  <span>{error}</span>
+                </div>
+                {error.includes("Account not found") && (
+                  <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#fecaca" }}>
+                    Tip: Make sure you entered your registered email or 10-digit phone, or{" "}
+                    <button
+                      type="button"
+                      onClick={() => { setSubMode("register"); setError(""); }}
+                      style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", fontWeight: 700, cursor: "pointer", padding: 0 }}
+                    >
+                      create a new account here
+                    </button>.
+                  </div>
+                )}
+                {error.includes("Incorrect password") && (
+                  <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#fecaca" }}>
+                    Need to reset it?{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetForm(prev => ({ ...prev, identifier: identifier.trim() }));
+                        setSubMode("reset");
+                        setError("");
+                      }}
+                      style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", fontWeight: 700, cursor: "pointer", padding: 0 }}
+                    >
+                      Click here to reset your password instantly
+                    </button>.
+                  </div>
+                )}
               </div>
             )}
 
@@ -1038,18 +1676,51 @@ export default function LoginPage({ initialPortal }) {
         {/* Footer Links */}
         <div style={{ marginTop: 22, textAlign: "center", borderTop: "1px solid rgba(255, 255, 255, 0.08)", paddingTop: 16 }}>
           {!isPolice ? (
-            <p style={{ margin: 0, fontSize: "0.85rem", color: "#94a3b8" }}>
-              New citizen user?{" "}
-              <Link to="/register" style={{ color: "#c084fc", fontWeight: 700, textDecoration: "none" }}>
-                Create Abhaya Account
-              </Link>
-            </p>
-          ) : !isOfficerRegister ? (
+            isLogin ? (
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#94a3b8" }}>
+                New citizen user?{" "}
+                <button
+                  type="button"
+                  onClick={() => { setSubMode("register"); setError(""); }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#c084fc",
+                    fontWeight: 700,
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                    fontSize: "0.85rem"
+                  }}
+                >
+                  Create Abhaya Account
+                </button>
+              </p>
+            ) : (
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#94a3b8" }}>
+                Already registered?{" "}
+                <button
+                  type="button"
+                  onClick={() => { setSubMode("login"); setError(""); }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#c084fc",
+                    fontWeight: 700,
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                    fontSize: "0.85rem"
+                  }}
+                >
+                  Sign In to Your Account
+                </button>
+              </p>
+            )
+          ) : isLogin ? (
             <p style={{ margin: 0, fontSize: "0.82rem", color: "#94a3b8" }}>
               Need authority clearance?{" "}
               <button
                 type="button"
-                onClick={() => setPoliceMode("register")}
+                onClick={() => { setSubMode("register"); setError(""); }}
                 style={{
                   background: "none",
                   border: "none",
@@ -1063,7 +1734,26 @@ export default function LoginPage({ initialPortal }) {
                 Create Officer Account (with ID Proof)
               </button>
             </p>
-          ) : null}
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "#94a3b8" }}>
+              Already cleared officer?{" "}
+              <button
+                type="button"
+                onClick={() => { setSubMode("login"); setError(""); }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#60a5fa",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontSize: "0.82rem"
+                }}
+              >
+                Sign In to Police Command Console
+              </button>
+            </p>
+          )}
 
           <div style={{ marginTop: 12 }}>
             <button

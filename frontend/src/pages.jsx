@@ -636,10 +636,63 @@ function useForm(init) { const [v, set] = useState(init); return [v, e => set({ 
 export const Login = LoginPage;
 
 export function Register() {
-  const nv = useNavigate(), [v, ch] = useForm({ full_name: "", email: "", phone: "", password: "", confirm_password: "" }), [e, setE] = useState(""), [f, setF] = useState({});
-  return <div className="main" style={{ maxWidth: 440 }}><div style={{ marginBottom: 16 }}><Link to="/" className="mut" style={{ textDecoration: "none" }}>&larr; Back to Landing Page</Link></div><h2 className="grad">Create account</h2><form className="card" onSubmit={async ev => { ev.preventDefault(); try { await api("/auth/register", { method: "POST", body: v }); nv("/login"); } catch (x) { setE(x.message); setF(x.fields || {}); } }}>
-    <Field l="Full name" name="full_name" onChange={ch} err={f.full_name} /><Field l="Email" name="email" type="email" onChange={ch} err={f.email} /><Field l="Mobile number" name="phone" onChange={ch} err={f.phone} />
-    <Field l="Password" name="password" type="password" onChange={ch} err={f.password} /><Field l="Confirm password" name="confirm_password" type="password" onChange={ch} err={f.confirm_password} /><Err e={e} /><button className="btn">Register</button><p className="mut">Already have an account? <Link to="/login">Login</Link></p></form></div>;
+  const { login } = useAuth();
+  const nv = useNavigate(), [v, ch] = useForm({ full_name: "", email: "", phone: "", password: "", confirm_password: "" }), [e, setE] = useState(""), [f, setF] = useState({}), [busy, setBusy] = useState(false);
+  return (
+    <div className="main" style={{ maxWidth: 440 }}>
+      <div style={{ marginBottom: 16 }}>
+        <Link to="/" className="mut" style={{ textDecoration: "none" }}>&larr; Back to Landing Page</Link>
+      </div>
+      <h2 className="grad">Create Citizen Account</h2>
+      <p className="mut" style={{ marginTop: -8, marginBottom: 18, fontSize: "0.88rem" }}>
+        Instant registration with encrypted safety shield &amp; 24/7 SOS monitoring.
+      </p>
+      <form
+        className="card"
+        onSubmit={async ev => {
+          ev.preventDefault();
+          setE("");
+          setBusy(true);
+          try {
+            const res = await api("/auth/register", {
+              method: "POST",
+              body: {
+                full_name: (v.full_name || "").trim(),
+                email: (v.email || "").trim(),
+                phone: (v.phone || "").trim(),
+                password: v.password || "",
+                confirm_password: v.confirm_password || ""
+              }
+            });
+            if (res.token && res.user) {
+              login(res.token, res.user);
+              nv("/dashboard");
+            } else {
+              nv("/login");
+            }
+          } catch (x) {
+            setE(x.message || "Registration failed. Please check the entered fields.");
+            setF(x.fields || {});
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Field l="Full name" name="full_name" onChange={ch} err={f.full_name} placeholder="e.g. Ananya Sharma" required />
+        <Field l="Email" name="email" type="email" onChange={ch} err={f.email} placeholder="ananya@example.com" required />
+        <Field l="Mobile number (10 digits)" name="phone" onChange={ch} err={f.phone} placeholder="9876543210" required />
+        <Field l="Password" name="password" type="password" onChange={ch} err={f.password} placeholder="Min 8 letters & numbers" required />
+        <Field l="Confirm password" name="confirm_password" type="password" onChange={ch} err={f.confirm_password} placeholder="Re-type password" required />
+        <Err e={e} />
+        <button className="btn" disabled={busy} style={{ width: "100%", justifyContent: "center", marginTop: 8 }}>
+          {busy ? "Creating Account..." : "Create Account & Enter Safety Hub →"}
+        </button>
+        <p className="mut" style={{ textAlign: "center", marginTop: 14 }}>
+          Already have an account? <Link to="/login" style={{ color: "var(--brand, #a855f7)", fontWeight: 600 }}>Login here</Link>
+        </p>
+      </form>
+    </div>
+  );
 }
 
 /* ---------- dashboard / profile ---------- */
