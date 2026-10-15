@@ -265,6 +265,15 @@ export default function ReportHazard() {
   // Map Filter
   const [mapCategoryFilter, setMapCategoryFilter] = useState("all");
 
+  // Live polling for citizen complaint updates from Police Command (every 4 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (mine && mine.reload) mine.reload();
+      if (pins && pins.reload) pins.reload();
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [mine, pins]);
+
   // Selected Pin Coordinates for Mini-map
   const mapPinPos = lat && lng ? [Number(lat), Number(lng)] : null;
   const initialMapCenter = mapPinPos || [16.705, 74.243]; // Kolhapur CBS default

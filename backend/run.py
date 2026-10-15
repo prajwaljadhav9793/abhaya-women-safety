@@ -18,7 +18,9 @@ def bootstrap():
         for sql in [
             "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE",
             "ALTER TABLE incident_evidence ADD COLUMN sha256_hash VARCHAR(64)",
-            "ALTER TABLE incident_evidence ADD COLUMN is_sealed BOOLEAN DEFAULT TRUE"
+            "ALTER TABLE incident_evidence ADD COLUMN is_sealed BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE sos_events ADD COLUMN patrol_unit VARCHAR(100)",
+            "ALTER TABLE sos_events ADD COLUMN dispatch_note VARCHAR(500)"
         ]:
             try:
                 db.session.execute(text(sql))

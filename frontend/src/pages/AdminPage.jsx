@@ -33,10 +33,17 @@ import {
   AlertCircle,
   UserPlus,
   UploadCloud,
-  FileCheck2
+  FileCheck2,
+  Volume2,
+  VolumeX,
+  Siren,
+  Truck,
+  PhoneCall,
+  RefreshCw
 } from "lucide-react";
 import { api, useLoad, download } from "../api.js";
 import { useAuth, Tag } from "../context/AuthContext.jsx";
+import { playPoliceDispatchChirp, playEmergencyDistressAlarm } from "../emergencyAudio.js";
 import SafetyIntelligenceDashboard from "../SafetyIntelligenceDashboard.jsx";
 
 export default function AdminPage() {
@@ -121,6 +128,143 @@ export default function AdminPage() {
   });
 
   const [flashMsg, setFlashMsg] = useState("");
+
+  // Real-time Police CAD Dispatch Feed State
+  const [liveFeedActive, setLiveFeedActive] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState(new Date());
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("abhaya_cad_sound") !== "false");
+  const [latestIncomingSos, setLatestIncomingSos] = useState(null);
+  const [activeDistressAlerts, setActiveDistressAlerts] = useState([]);
+  const [realtimeToast, setRealtimeToast] = useState(null);
+  const [lastSeenSosId, setLastSeenSosId] = useState(0);
+  const [lastSeenReportId, setLastSeenReportId] = useState(0);
+
+  // Patrol Dispatch Modal State
+  const [dispatchModal, setDispatchModal] = useState({
+    isOpen: false,
+    sos: null,
+    patrolUnit: "Shahupuri Precinct Mobile-01",
+    notes: "",
+    busy: false,
+    error: ""
+  });
+
+  // Citizen SOS Full Inspection Modal
+  const [selectedSosDetail, setSelectedSosDetail] = useState(null);
+
+  // Background High-Frequency Real-time Poller (every 2.8s)
+  useEffect(() => {
+    let isMounted = true;
+    let timer = null;
+
+    const pollLiveFeed = async () => {
+      try {
+        const feed = await api(`/admin/live-feed?last_sos_id=${lastSeenSosId}&last_report_id=${lastSeenReportId}`);
+        if (!isMounted) return;
+
+        setLastSyncTime(new Date());
+
+        // 1. Process active distress events list
+        if (feed.active_sos) {
+          setActiveDistressAlerts(feed.active_sos);
+        }
+
+        // 2. Process new SOS distress events
+        if (feed.new_sos && feed.new_sos.length > 0) {
+          const maxSosId = Math.max(...feed.new_sos.map((s) => s.id));
+          if (lastSeenSosId > 0 && maxSosId > lastSeenSosId) {
+            const urgent = feed.new_sos[0];
+            setLatestIncomingSos(urgent);
+            if (soundEnabled) {
+              playEmergencyDistressAlarm();
+            }
+            setRealtimeToast({
+              type: "sos",
+              title: "🚨 CRITICAL SOS DISTRESS ALERT RECEIVED!",
+              desc: `${urgent.user_name || "Citizen"} at ${urgent.jurisdiction_police_station?.name || "Kolhapur"}`,
+              id: urgent.id,
+              timestamp: Date.now()
+            });
+            reloadSos();
+            if (stats.reload) stats.reload();
+          }
+          setLastSeenSosId((prev) => Math.max(prev, maxSosId));
+        }
+
+        // 3. Process new Citizen Complaints
+        if (feed.new_reports && feed.new_reports.length > 0) {
+          const maxRepId = Math.max(...feed.new_reports.map((r) => r.id));
+          if (lastSeenReportId > 0 && maxRepId > lastSeenReportId) {
+            const newRep = feed.new_reports[0];
+            if (soundEnabled) {
+              playPoliceDispatchChirp();
+            }
+            setRealtimeToast({
+              type: "complaint",
+              title: "📢 NEW CITIZEN COMPLAINT LOGGED",
+              desc: `#${newRep.id} ${newRep.category} by ${newRep.complainant?.name || "Citizen"}`,
+              id: newRep.id,
+              timestamp: Date.now()
+            });
+            reloadComplaints();
+            if (stats.reload) stats.reload();
+          }
+          setLastSeenReportId((prev) => Math.max(prev, maxRepId));
+        }
+      } catch (err) {
+        // Retry smoothly on next interval
+      }
+    };
+
+    pollLiveFeed();
+    timer = setInterval(pollLiveFeed, 2800);
+
+    return () => {
+      isMounted = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [lastSeenSosId, lastSeenReportId, soundEnabled]);
+
+  const handleDispatchPatrol = async (e) => {
+    if (e) e.preventDefault();
+    if (!dispatchModal.sos) return;
+
+    setDispatchModal((prev) => ({ ...prev, busy: true, error: "" }));
+    try {
+      await api(`/admin/sos/${dispatchModal.sos.id}/dispatch`, {
+        method: "POST",
+        body: {
+          patrol_unit: dispatchModal.patrolUnit,
+          notes: dispatchModal.notes
+        }
+      });
+
+      setFlashMsg(`🚓 Patrol unit '${dispatchModal.patrolUnit}' dispatched to SOS #${dispatchModal.sos.id}. Citizen notified in real-time.`);
+      setTimeout(() => setFlashMsg(""), 6000);
+      setDispatchModal({ isOpen: false, sos: null, patrolUnit: "Shahupuri Precinct Mobile-01", notes: "", busy: false, error: "" });
+      reloadSos();
+      if (stats.reload) stats.reload();
+    } catch (err) {
+      setDispatchModal((prev) => ({ ...prev, busy: false, error: err.message || "Failed to dispatch patrol unit." }));
+    }
+  };
+
+  const handleResolveSos = async (sosId) => {
+    if (!window.confirm(`Confirm resolution of SOS Distress Alert #${sosId}? Citizen will be marked safe and notified in real-time.`)) return;
+
+    try {
+      await api(`/admin/sos/${sosId}/resolve`, {
+        method: "POST",
+        body: { notes: `Emergency handled and marked safe by Officer ${user?.full_name || "Police Commander"}.` }
+      });
+      setFlashMsg(`✅ SOS Distress Alert #${sosId} marked as RESOLVED. Citizen notified in real-time.`);
+      setTimeout(() => setFlashMsg(""), 6000);
+      reloadSos();
+      if (stats.reload) stats.reload();
+    } catch (err) {
+      alert(err.message || "Failed to resolve SOS.");
+    }
+  };
 
   const openReviewModal = (report, targetStatus) => {
     const defaultReasons = {
@@ -306,6 +450,137 @@ export default function AdminPage() {
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", paddingBottom: 60 }}>
+      {/* Real-time Emergency SOS Top Alert Banner */}
+      {activeDistressAlerts.length > 0 && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(185, 28, 28, 0.95))",
+            color: "#fff",
+            padding: "16px 22px",
+            borderRadius: 16,
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 14,
+            boxShadow: "0 0 35px rgba(239, 68, 68, 0.55)",
+            border: "2px solid #fecaca"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ padding: 10, background: "rgba(0,0,0,0.3)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Siren size={30} color="#fff" />
+            </div>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 900, letterSpacing: "0.06em", fontSize: "1rem" }}>
+                  🚨 ACTIVE CITIZEN DISTRESS SIGNAL #{activeDistressAlerts[0].id}
+                </span>
+                <span style={{ background: "#fff", color: "#b91c1c", fontSize: "0.72rem", fontWeight: 800, padding: "2px 8px", borderRadius: 4 }}>
+                  IMMEDIATE ACTION REQUIRED
+                </span>
+                <span style={{ background: "rgba(0,0,0,0.3)", color: "#fee2e2", fontSize: "0.72rem", padding: "2px 8px", borderRadius: 4 }}>
+                  {activeDistressAlerts.length} Active Distress Call{activeDistressAlerts.length > 1 ? "s" : ""}
+                </span>
+              </div>
+              <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#fee2e2" }}>
+                Complainant: <b>{activeDistressAlerts[0].user_name || "Citizen"}</b> &bull; Contact: <b>{activeDistressAlerts[0].user_phone || "N/A"}</b> &bull; Location: <b>{activeDistressAlerts[0].jurisdiction_police_station?.name || "Kolhapur"}</b> ({activeDistressAlerts[0].lat ? `${activeDistressAlerts[0].lat.toFixed(4)}, ${activeDistressAlerts[0].lng.toFixed(4)}` : "GPS Locked"})
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setDispatchModal({
+                  isOpen: true,
+                  sos: activeDistressAlerts[0],
+                  patrolUnit: "Shahupuri Precinct Mobile-01",
+                  notes: "Emergency dispatch initiated from top priority alert banner.",
+                  busy: false,
+                  error: ""
+                });
+              }}
+              style={{ background: "#fff", color: "#dc2626", fontWeight: 800, border: "none", display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 18px", boxShadow: "0 4px 12px rgba(0,0,0,0.25)" }}
+            >
+              <Truck size={17} /> Dispatch Patrol Unit Now
+            </button>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => {
+                handleTabChange("sos");
+              }}
+              style={{ borderColor: "rgba(255,255,255,0.6)", color: "#fff", padding: "8px 14px" }}
+            >
+              View SOS Feed &rarr;
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Real-time Event Toast */}
+      {realtimeToast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 9999,
+            background: realtimeToast.type === "sos" ? "rgba(185, 28, 28, 0.95)" : "rgba(15, 23, 42, 0.95)",
+            border: `1.5px solid ${realtimeToast.type === "sos" ? "#f87171" : "#60a5fa"}`,
+            borderRadius: 14,
+            padding: "16px 20px",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.7)",
+            maxWidth: 390,
+            backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)"
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                {realtimeToast.type === "sos" ? <ShieldAlert size={18} color="#fecaca" /> : <FileText size={18} color="#93c5fd" />}
+                <span>{realtimeToast.title}</span>
+              </div>
+              <p style={{ margin: "4px 0 0", fontSize: "0.82rem", color: "#e2e8f0" }}>
+                {realtimeToast.desc}
+              </p>
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleTabChange(realtimeToast.type === "sos" ? "sos" : "complaints");
+                    setRealtimeToast(null);
+                  }}
+                  style={{
+                    background: "rgba(255,255,255,0.15)",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    color: "#fff",
+                    borderRadius: 6,
+                    padding: "3px 8px",
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                    fontWeight: 600
+                  }}
+                >
+                  View Details &rarr;
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRealtimeToast(null)}
+              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", padding: 2 }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Law Enforcement Official Command Banner */}
       <div
         style={{
@@ -353,10 +628,14 @@ export default function AdminPage() {
                   fontWeight: 800,
                   padding: "3px 8px",
                   borderRadius: 6,
-                  letterSpacing: "0.05em"
+                  letterSpacing: "0.05em",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5
                 }}
               >
-                ● LIVE DISPATCH TERMINAL
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block" }}></span>
+                LIVE CAD RADAR &bull; 2.8s PULSE
               </span>
             </div>
             <p style={{ margin: "4px 0 0", color: "#93c5fd", fontSize: "0.85rem" }}>
@@ -366,8 +645,31 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Quick Action Pill */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Quick Action & Controls Pill */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {/* Audio Alarm Sound Toggle */}
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              localStorage.setItem("abhaya_cad_sound", String(next));
+              if (next) playPoliceDispatchChirp();
+            }}
+            title={soundEnabled ? "Mute automatic dispatch sounds" : "Enable automatic dispatch audio alerts"}
+            style={{
+              borderColor: soundEnabled ? "rgba(34, 197, 94, 0.45)" : "rgba(148, 163, 184, 0.3)",
+              color: soundEnabled ? "#4ade80" : "#94a3b8",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6
+            }}
+          >
+            {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            <span>Sound Alerts: <b>{soundEnabled ? "ON" : "MUTED"}</b></span>
+          </button>
+
           <Link
             to="/dashboard"
             className="btn ghost sm"
@@ -392,7 +694,7 @@ export default function AdminPage() {
               if (activeTab === "audit") reloadAudit();
             }}
             title="Refresh current data"
-            style={{ borderColor: "rgba(255, 255, 255, 0.2)", color: "#fff" }}
+            style={{ borderColor: "rgba(255, 255, 255, 0.2)", color: "#fff", display: "inline-flex", alignItems: "center", gap: 6 }}
           >
             <RotateCcw size={14} /> Refresh
           </button>
@@ -1489,74 +1791,254 @@ export default function AdminPage() {
                 <thead>
                   <tr>
                     <th>SOS Event</th>
-                    <th>Citizen User</th>
-                    <th>Trigger Timestamp</th>
-                    <th>Mode</th>
-                    <th>GPS Coordinates</th>
-                    <th>Status</th>
-                    <th>Circle Alerts Dispatched</th>
-                    <th style={{ textAlign: "right" }}>Certified PDF</th>
+                    <th>Citizen Complainant</th>
+                    <th>Medical Profile (ICE)</th>
+                    <th>GPS / Station Jurisdiction</th>
+                    <th>Status &amp; Patrol Unit</th>
+                    <th style={{ textAlign: "right" }}>Command Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sosData.items.map((e) => (
-                    <tr key={e.id}>
-                      <td>
-                        <b>#{e.id}</b>
-                      </td>
-                      <td>User #{e.user_id}</td>
-                      <td>{new Date(e.created_at + (e.created_at.endsWith("Z") ? "" : "Z")).toLocaleString()}</td>
-                      <td>
-                        <span
-                          className="badge"
-                          style={{
-                            background: e.mode === "live" ? "rgba(239, 68, 68, 0.25)" : "rgba(100, 116, 139, 0.25)",
-                            color: e.mode === "live" ? "#f87171" : "#cbd5e1"
-                          }}
-                        >
-                          {e.mode?.toUpperCase()}
-                        </span>
-                      </td>
-                      <td>
-                        {e.lat && e.lng ? (
-                          <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${e.lat},${e.lng}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#38bdf8", textDecoration: "underline", fontSize: "0.8rem" }}
+                  {sosData.items.map((e) => {
+                    const isTriggered = e.status === "triggered";
+                    const isUnderReview = e.status === "under_review";
+                    const isResolved = e.status === "resolved";
+
+                    return (
+                      <tr
+                        key={e.id}
+                        style={{
+                          background: isTriggered ? "rgba(239, 68, 68, 0.08)" : isUnderReview ? "rgba(59, 130, 246, 0.05)" : undefined,
+                          borderLeft: isTriggered ? "4px solid #ef4444" : isUnderReview ? "4px solid #3b82f6" : "4px solid #10b981"
+                        }}
+                      >
+                        <td>
+                          <div style={{ fontWeight: 800, color: "#fff" }}>#{e.id}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>
+                            {new Date(e.created_at + (e.created_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                          </div>
+                          <span
+                            className="badge"
+                            style={{
+                              marginTop: 4,
+                              display: "inline-block",
+                              background: e.mode === "live" ? "rgba(239, 68, 68, 0.25)" : "rgba(100, 116, 139, 0.25)",
+                              color: e.mode === "live" ? "#f87171" : "#cbd5e1",
+                              fontSize: "0.68rem"
+                            }}
                           >
-                            {e.lat.toFixed(4)}, {e.lng.toFixed(4)}
-                          </a>
-                        ) : (
-                          <span className="mut">{e.location_status || "Unavailable"}</span>
-                        )}
-                      </td>
-                      <td>
-                        <Tag s={e.status} />
-                      </td>
-                      <td>
-                        <span style={{ fontSize: "0.8rem", color: "#4ade80" }}>
-                          {e.notifications?.map((n) => n.status).join(", ") || "Gateway Dispatched"}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        <button
-                          type="button"
-                          className="btn ghost sm"
-                          onClick={() => download(`/pdf/sos/${e.id}`, `abhaya_sos_dossier_${e.id}.pdf`)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            borderColor: "rgba(239, 68, 68, 0.4)",
-                            color: "#f87171"
-                          }}
-                        >
-                          <FileDown size={13} /> SOS Dossier
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            {e.mode?.toUpperCase() || "LIVE"}
+                          </span>
+                        </td>
+
+                        <td>
+                          <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.88rem" }}>
+                            {e.user_name || `User #${e.user_id}`}
+                          </div>
+                          {e.user_phone ? (
+                            <div style={{ marginTop: 3 }}>
+                              <a
+                                href={`tel:${e.user_phone}`}
+                                style={{
+                                  color: "#38bdf8",
+                                  textDecoration: "none",
+                                  fontSize: "0.8rem",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  fontWeight: 600
+                                }}
+                                title="Click to dial citizen"
+                              >
+                                <PhoneCall size={12} /> {e.user_phone}
+                              </a>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>No phone</span>
+                          )}
+                          {e.user_email && (
+                            <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>
+                              {e.user_email}
+                            </div>
+                          )}
+                        </td>
+
+                        <td>
+                          {e.medical_profile?.blood_group ? (
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(239, 68, 68, 0.2)", color: "#fca5a5", padding: "2px 7px", borderRadius: 4, fontSize: "0.75rem", fontWeight: 700, marginBottom: 4 }}>
+                              <span>🩸 Blood: {e.medical_profile.blood_group}</span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Blood group not set</div>
+                          )}
+                          {e.medical_profile?.allergies && (
+                            <div style={{ fontSize: "0.72rem", color: "#fbbf24" }}>
+                              Allergies: {e.medical_profile.allergies}
+                            </div>
+                          )}
+                          {e.emergency_contacts && e.emergency_contacts.length > 0 && (
+                            <div style={{ fontSize: "0.72rem", color: "#a78bfa", marginTop: 2 }}>
+                              ICE: {e.emergency_contacts[0].name} ({e.emergency_contacts[0].phone})
+                            </div>
+                          )}
+                        </td>
+
+                        <td>
+                          <div style={{ fontWeight: 600, color: "#e2e8f0", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 4 }}>
+                            <Building2 size={13} color="#93c5fd" />
+                            {e.jurisdiction_police_station?.name || "Kolhapur Precinct Desk"}
+                          </div>
+                          {e.lat && e.lng ? (
+                            <div style={{ marginTop: 4 }}>
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${e.lat},${e.lng}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  color: "#38bdf8",
+                                  textDecoration: "underline",
+                                  fontSize: "0.78rem",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4
+                                }}
+                              >
+                                <MapPin size={12} /> {e.lat.toFixed(4)}, {e.lng.toFixed(4)}
+                              </a>
+                            </div>
+                          ) : (
+                            <span className="mut" style={{ fontSize: "0.75rem" }}>{e.location_status || "Cell-tower approximate"}</span>
+                          )}
+                        </td>
+
+                        <td>
+                          <Tag s={e.status} />
+                          {e.patrol_unit ? (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                padding: "3px 8px",
+                                background: "rgba(59, 130, 246, 0.2)",
+                                border: "1px solid rgba(59, 130, 246, 0.35)",
+                                borderRadius: 6,
+                                color: "#93c5fd",
+                                fontSize: "0.73rem",
+                                fontWeight: 700,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4
+                              }}
+                            >
+                              <Truck size={12} /> {e.patrol_unit}
+                            </div>
+                          ) : isTriggered ? (
+                            <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#f87171", fontWeight: 700 }}>
+                              ⚠️ Pending Dispatch
+                            </div>
+                          ) : null}
+                          {e.dispatch_note && (
+                            <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 2, maxWidth: 160 }}>
+                              {e.dispatch_note}
+                            </div>
+                          )}
+                        </td>
+
+                        <td style={{ textAlign: "right" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn sm"
+                                onClick={() => {
+                                  setDispatchModal({
+                                    isOpen: true,
+                                    sos: e,
+                                    patrolUnit: e.patrol_unit || "Shahupuri Precinct Mobile-01",
+                                    notes: e.dispatch_note || "Patrol unit dispatched immediately.",
+                                    busy: false,
+                                    error: ""
+                                  });
+                                }}
+                                style={{
+                                  background: "linear-gradient(135deg, #1d4ed8, #0284c7)",
+                                  color: "#fff",
+                                  fontSize: "0.75rem",
+                                  padding: "4px 10px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 5,
+                                  fontWeight: 700,
+                                  border: "none",
+                                  borderRadius: 6
+                                }}
+                              >
+                                <Truck size={13} /> {e.patrol_unit ? "Update Patrol" : "Dispatch Unit"}
+                              </button>
+
+                              {!isResolved && (
+                                <button
+                                  type="button"
+                                  className="btn sm"
+                                  onClick={() => handleResolveSos(e.id)}
+                                  style={{
+                                    background: "rgba(16, 185, 129, 0.2)",
+                                    border: "1px solid rgba(16, 185, 129, 0.4)",
+                                    color: "#6ee7b7",
+                                    fontSize: "0.75rem",
+                                    padding: "4px 10px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                    borderRadius: 6,
+                                    fontWeight: 700
+                                  }}
+                                  title="Mark safe & resolve emergency"
+                                >
+                                  <Check size={13} /> Resolve
+                                </button>
+                              )}
+                            </div>
+
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                onClick={() => setSelectedSosDetail(e)}
+                                style={{
+                                  fontSize: "0.72rem",
+                                  padding: "3px 8px",
+                                  color: "#cbd5e1",
+                                  borderColor: "rgba(255,255,255,0.2)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4
+                                }}
+                              >
+                                <Eye size={12} /> Inspect ICE
+                              </button>
+
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                onClick={() => download(`/pdf/sos/${e.id}`, `abhaya_sos_dossier_${e.id}.pdf`)}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  borderColor: "rgba(239, 68, 68, 0.4)",
+                                  color: "#f87171",
+                                  fontSize: "0.72rem",
+                                  padding: "3px 8px"
+                                }}
+                              >
+                                <FileDown size={12} /> Dossier PDF
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 
@@ -2489,6 +2971,515 @@ export default function AdminPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: RAPID POLICE PATROL DISPATCH (CAD)                      */}
+      {/* ============================================================== */}
+      {dispatchModal.isOpen && dispatchModal.sos && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(2, 6, 23, 0.8)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: 16
+          }}
+          onClick={() => !dispatchModal.busy && setDispatchModal((prev) => ({ ...prev, isOpen: false }))}
+        >
+          <div
+            style={{
+              background: "#0f172a",
+              border: "1.5px solid #3b82f6",
+              borderRadius: 16,
+              maxWidth: 540,
+              width: "100%",
+              padding: 24,
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
+              color: "#fff"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ padding: 8, background: "rgba(59, 130, 246, 0.2)", borderRadius: 10 }}>
+                  <Truck size={24} color="#60a5fa" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 800 }}>
+                    Emergency Patrol CAD Dispatch
+                  </h3>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#94a3b8" }}>
+                    SOS Event #{dispatchModal.sos.id} &bull; Complainant: <b>{dispatchModal.sos.user_name || "Citizen"}</b>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDispatchModal((prev) => ({ ...prev, isOpen: false }))}
+                disabled={dispatchModal.busy}
+                style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Quick Overview Pill */}
+            <div
+              style={{
+                background: "rgba(30, 58, 138, 0.25)",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                borderRadius: 10,
+                padding: "12px 14px",
+                marginBottom: 16,
+                fontSize: "0.82rem"
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ color: "#93c5fd" }}>Phone:</span>
+                <b>
+                  <a href={`tel:${dispatchModal.sos.user_phone}`} style={{ color: "#38bdf8" }}>
+                    {dispatchModal.sos.user_phone || "Not recorded"}
+                  </a>
+                </b>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ color: "#93c5fd" }}>Target Coordinates:</span>
+                <b>
+                  {dispatchModal.sos.lat && dispatchModal.sos.lng ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${dispatchModal.sos.lat},${dispatchModal.sos.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#38bdf8", textDecoration: "underline" }}
+                    >
+                      {dispatchModal.sos.lat.toFixed(4)}, {dispatchModal.sos.lng.toFixed(4)} (Open Map)
+                    </a>
+                  ) : "Unavailable"}
+                </b>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#93c5fd" }}>Precinct Jurisdiction:</span>
+                <b>{dispatchModal.sos.jurisdiction_police_station?.name || "Shahupuri Police Precinct"}</b>
+              </div>
+            </div>
+
+            <form onSubmit={handleDispatchPatrol}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#cbd5e1", marginBottom: 6 }}>
+                  Select Patrol Unit / Mobile Squad *
+                </label>
+                <select
+                  value={dispatchModal.patrolUnit}
+                  onChange={(e) => setDispatchModal((prev) => ({ ...prev, patrolUnit: e.target.value }))}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "rgba(0, 0, 0, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    color: "#fff",
+                    fontSize: "0.85rem"
+                  }}
+                  required
+                >
+                  <option value="Shahupuri Precinct Mobile-01">Shahupuri Precinct Mobile-01 (Rapid QRT)</option>
+                  <option value="Cyber Women Quick-Response Cheetah-04">Cyber Women Quick-Response Cheetah-04</option>
+                  <option value="Laxmipuri Beat Patrol Unit-02">Laxmipuri Beat Patrol Unit-02</option>
+                  <option value="Rajarampuri Highway Interceptor-03">Rajarampuri Highway Interceptor-03</option>
+                  <option value="District PCR Van Delta-09">District PCR Van Delta-09</option>
+                  <option value="Women Night Patrol Nirbhaya-01">Women Night Patrol Nirbhaya-01</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#cbd5e1", marginBottom: 6 }}>
+                  Custom Unit Call-sign / Patrol ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="Or enter custom patrol unit call sign..."
+                  value={dispatchModal.patrolUnit}
+                  onChange={(e) => setDispatchModal((prev) => ({ ...prev, patrolUnit: e.target.value }))}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: 8,
+                    background: "rgba(0, 0, 0, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    color: "#fff",
+                    fontSize: "0.85rem"
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#cbd5e1", marginBottom: 6 }}>
+                  Patrol Operational Instructions &amp; Citizen Dispatch Note
+                </label>
+                <textarea
+                  rows={3}
+                  value={dispatchModal.notes}
+                  onChange={(e) => setDispatchModal((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="e.g. Unit dispatched with priority lights. Establish direct contact with victim on phone immediately."
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "rgba(0, 0, 0, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    color: "#fff",
+                    fontSize: "0.85rem",
+                    resize: "vertical"
+                  }}
+                />
+              </div>
+
+              {dispatchModal.error && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    background: "rgba(239, 68, 68, 0.2)",
+                    border: "1px solid rgba(239, 68, 68, 0.4)",
+                    borderRadius: 6,
+                    color: "#fca5a5",
+                    fontSize: "0.8rem",
+                    marginBottom: 14
+                  }}
+                >
+                  {dispatchModal.error}
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setDispatchModal((prev) => ({ ...prev, isOpen: false }))}
+                  disabled={dispatchModal.busy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn sm"
+                  disabled={dispatchModal.busy}
+                  style={{
+                    background: "linear-gradient(135deg, #1d4ed8, #0284c7)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    padding: "9px 20px",
+                    border: "none",
+                    boxShadow: "0 4px 14px rgba(29, 78, 216, 0.4)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <Truck size={15} /> {dispatchModal.busy ? "Broadcasting CAD..." : "Confirm & Dispatch Patrol"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: FULL CITIZEN SOS & ICE PROFILE INSPECTION               */}
+      {/* ============================================================== */}
+      {selectedSosDetail && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(2, 6, 23, 0.8)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: 16
+          }}
+          onClick={() => setSelectedSosDetail(null)}
+        >
+          <div
+            style={{
+              background: "#0f172a",
+              border: "1.5px solid rgba(239, 68, 68, 0.4)",
+              borderRadius: 16,
+              maxWidth: 620,
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: 24,
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.85)",
+              color: "#fff"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ padding: 8, background: "rgba(239, 68, 68, 0.2)", borderRadius: 10 }}>
+                  <ShieldAlert size={26} color="#f87171" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800 }}>
+                    Emergency Distress Dossier #{selectedSosDetail.id}
+                  </h3>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#94a3b8" }}>
+                    Triggered at {new Date(selectedSosDetail.created_at + (selectedSosDetail.created_at.endsWith("Z") ? "" : "Z")).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSosDetail(null)}
+                style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Citizen Identity */}
+            <div
+              style={{
+                background: "rgba(15, 23, 42, 0.8)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                borderRadius: 12,
+                padding: "14px 16px",
+                marginBottom: 16
+              }}
+            >
+              <h4 style={{ margin: "0 0 10px", fontSize: "0.88rem", color: "#93c5fd", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Complainant Identity
+              </h4>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.85rem" }}>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Full Name:</span>
+                  <div style={{ fontWeight: 700, color: "#fff" }}>{selectedSosDetail.user_name || `User #${selectedSosDetail.user_id}`}</div>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Mobile Number:</span>
+                  <div>
+                    {selectedSosDetail.user_phone ? (
+                      <a href={`tel:${selectedSosDetail.user_phone}`} style={{ color: "#38bdf8", fontWeight: 700 }}>
+                        📞 {selectedSosDetail.user_phone}
+                      </a>
+                    ) : "Not recorded"}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Email:</span>
+                  <div style={{ color: "#cbd5e1" }}>{selectedSosDetail.user_email || "N/A"}</div>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Current Status:</span>
+                  <div style={{ marginTop: 2 }}>
+                    <Tag s={selectedSosDetail.status} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* In Case of Emergency (ICE) Medical Profile */}
+            <div
+              style={{
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.25)",
+                borderRadius: 12,
+                padding: "14px 16px",
+                marginBottom: 16
+              }}
+            >
+              <h4 style={{ margin: "0 0 10px", fontSize: "0.88rem", color: "#fca5a5", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>🩺 Emergency Medical Profile (ICE)</span>
+              </h4>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.85rem" }}>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Blood Group:</span>
+                  <div style={{ fontWeight: 800, color: "#f87171", fontSize: "1rem" }}>
+                    {selectedSosDetail.medical_profile?.blood_group || "Not Specified"}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Preferred Hospital:</span>
+                  <div style={{ color: "#fff", fontWeight: 600 }}>
+                    {selectedSosDetail.medical_profile?.hospital_preference || "District Civil Hospital Kolhapur"}
+                  </div>
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Known Allergies:</span>
+                  <div style={{ color: "#fbbf24" }}>
+                    {selectedSosDetail.medical_profile?.allergies || "None reported"}
+                  </div>
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Medical Conditions / Notes:</span>
+                  <div style={{ color: "#cbd5e1" }}>
+                    {selectedSosDetail.medical_profile?.emergency_notes || "No pre-existing conditions recorded."}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Emergency Contacts (ICE Circle) */}
+            <div
+              style={{
+                background: "rgba(15, 23, 42, 0.8)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                borderRadius: 12,
+                padding: "14px 16px",
+                marginBottom: 16
+              }}
+            >
+              <h4 style={{ margin: "0 0 10px", fontSize: "0.88rem", color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Primary Emergency Contacts (Circle)
+              </h4>
+              {!selectedSosDetail.emergency_contacts || selectedSosDetail.emergency_contacts.length === 0 ? (
+                <div style={{ fontSize: "0.82rem", color: "#64748b" }}>No designated circle contacts.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {selectedSosDetail.emergency_contacts.map((c, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background: "rgba(0,0,0,0.25)",
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        fontSize: "0.85rem"
+                      }}
+                    >
+                      <div>
+                        <b>{c.name}</b> <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>({c.relation || "Contact"})</span>
+                      </div>
+                      <a href={`tel:${c.phone}`} style={{ color: "#38bdf8", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <PhoneCall size={12} /> {c.phone}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Live GPS & CAD Patrol Status */}
+            <div
+              style={{
+                background: "rgba(30, 58, 138, 0.2)",
+                border: "1px solid rgba(59, 130, 246, 0.3)",
+                borderRadius: 12,
+                padding: "14px 16px",
+                marginBottom: 20
+              }}
+            >
+              <h4 style={{ margin: "0 0 10px", fontSize: "0.88rem", color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Dispatch &amp; Geolocation Coordinates
+              </h4>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: "0.85rem" }}>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Patrol Unit Dispatched:</span>
+                  <div style={{ fontWeight: 700, color: "#93c5fd" }}>
+                    {selectedSosDetail.patrol_unit || "Pending Unit Assignment"}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Precinct Jurisdiction:</span>
+                  <div style={{ fontWeight: 600, color: "#fff" }}>
+                    {selectedSosDetail.jurisdiction_police_station?.name || "Shahupuri Police Precinct"}
+                  </div>
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Live GPS Location:</span>
+                  {selectedSosDetail.lat && selectedSosDetail.lng ? (
+                    <div style={{ marginTop: 4 }}>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${selectedSosDetail.lat},${selectedSosDetail.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#38bdf8", textDecoration: "underline", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}
+                      >
+                        <MapPin size={14} /> Open Exact Location on Google Maps ({selectedSosDetail.lat.toFixed(5)}, {selectedSosDetail.lng.toFixed(5)}) &rarr;
+                      </a>
+                    </div>
+                  ) : (
+                    <div style={{ color: "#94a3b8" }}>{selectedSosDetail.location_status || "Cell-tower approximate"}</div>
+                  )}
+                </div>
+                {selectedSosDetail.dispatch_note && (
+                  <div style={{ gridColumn: "span 2" }}>
+                    <span style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Dispatch Notes:</span>
+                    <div style={{ color: "#e2e8f0", background: "rgba(0,0,0,0.3)", padding: "8px 10px", borderRadius: 6, marginTop: 4 }}>
+                      {selectedSosDetail.dispatch_note}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => download(`/pdf/sos/${selectedSosDetail.id}`, `abhaya_sos_dossier_${selectedSosDetail.id}.pdf`)}
+                style={{ borderColor: "rgba(239, 68, 68, 0.4)", color: "#f87171", display: "inline-flex", alignItems: "center", gap: 5 }}
+              >
+                <FileDown size={14} /> Download Official PDF Dossier
+              </button>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => {
+                    const s = selectedSosDetail;
+                    setSelectedSosDetail(null);
+                    setDispatchModal({
+                      isOpen: true,
+                      sos: s,
+                      patrolUnit: s.patrol_unit || "Shahupuri Precinct Mobile-01",
+                      notes: s.dispatch_note || "Patrol unit dispatched immediately.",
+                      busy: false,
+                      error: ""
+                    });
+                  }}
+                  style={{
+                    background: "linear-gradient(135deg, #1d4ed8, #0284c7)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    border: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <Truck size={14} /> Dispatch / Update Patrol
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setSelectedSosDetail(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

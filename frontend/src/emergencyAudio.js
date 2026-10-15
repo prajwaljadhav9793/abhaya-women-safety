@@ -94,6 +94,84 @@ export function isEmergencyAlarmPlaying() {
 }
 
 /**
+ * Realistic police CAD electronic dispatch radio chime (3 tones: 880Hz -> 1175Hz -> 1760Hz).
+ * Perfect for real-time dispatch alerts and new incident notifications.
+ */
+export function playPoliceDispatchChirp() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    const tones = [
+      { freq: 880, start: now, duration: 0.12 },
+      { freq: 1175, start: now + 0.13, duration: 0.14 },
+      { freq: 1760, start: now + 0.28, duration: 0.22 }
+    ];
+
+    tones.forEach(({ freq, start, duration }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, start);
+
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.4, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration + 0.05);
+    });
+
+    setTimeout(() => {
+      try { ctx.close(); } catch (e) {}
+    }, 800);
+    return true;
+  } catch (e) {
+    console.warn("Police radio chirp audio error:", e);
+    return false;
+  }
+}
+
+/**
+ * Urgent dual-tone siren pulse for active SOS distress alerts.
+ */
+export function playEmergencyDistressAlarm() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    for (let i = 0; i < 3; i++) {
+      const start = now + (i * 0.28);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(950, start);
+      osc.frequency.exponentialRampToValueAtTime(1450, start + 0.18);
+
+      gain.gain.setValueAtTime(0.35, start);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.25);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.26);
+    }
+
+    setTimeout(() => {
+      try { ctx.close(); } catch (e) {}
+    }, 1200);
+    return true;
+  } catch (e) {
+    console.warn("Distress alarm error:", e);
+    return false;
+  }
+}
+
+/**
  * Saves known valid coordinates to localStorage for zero-latency emergency fallback.
  */
 export function saveEmergencyLocation(lat, lng) {

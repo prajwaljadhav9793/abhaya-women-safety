@@ -81,14 +81,27 @@ class SosEvent(db.Model):
     location_status = db.Column(db.String(40), default="unavailable")  # captured / unavailable / denied
     map_url = db.Column(db.String(255)); note = db.Column(db.String(500))
     mode = db.Column(db.Enum("demo", "live"), default="demo", nullable=False)
-    status = db.Column(db.Enum("active", "resolved", "cancelled"), default="active", index=True)
+    status = db.Column(db.Enum("active", "resolved", "cancelled", "under_review"), default="active", index=True)
+    patrol_unit = db.Column(db.String(100))
+    dispatch_note = db.Column(db.String(500))
     created_at = db.Column(db.DateTime, default=now); resolved_at = db.Column(db.DateTime)
+    
+    user = db.relationship("User", backref=db.backref("sos_events", cascade="all, delete-orphan"))
     notifications = db.relationship("NotificationLog", backref="sos_event", cascade="all, delete-orphan")
+
     def to_dict(self, with_logs=True):
-        d = dict(id=self.id, lat=self.lat, lng=self.lng, accuracy=self.accuracy,
+        d = dict(id=self.id, user_id=self.user_id, lat=self.lat, lng=self.lng, accuracy=self.accuracy,
                  location_status=self.location_status, map_url=self.map_url, note=self.note,
-                 mode=self.mode, status=self.status, created_at=self.created_at.isoformat(),
+                 mode=self.mode, status=self.status,
+                 patrol_unit=self.patrol_unit, dispatch_note=self.dispatch_note,
+                 created_at=self.created_at.isoformat(),
                  resolved_at=self.resolved_at.isoformat() if self.resolved_at else None)
+        if hasattr(self, "user") and self.user:
+            d["user_name"] = self.user.full_name
+            d["user_phone"] = self.user.phone
+            d["user_email"] = self.user.email
+            if hasattr(self.user, "medical_profile") and self.user.medical_profile:
+                d["medical_profile"] = self.user.medical_profile.to_dict()
         if with_logs: d["notifications"] = [n.to_dict() for n in self.notifications]
         return d
 

@@ -893,7 +893,17 @@ def submit_report(u):
         name = uuid.uuid4().hex + "." + fl.filename.rsplit(".", 1)[-1].lower()
         with open(os.path.join(current_app.config["UPLOAD_DIR"], name), "wb") as out: out.write(data)
         db.session.add(IncidentEvidence(report_id=r.id, user_id=u.id, stored_name=name, original_name=os.path.basename(fl.filename)[:255], mime_type=fl.mimetype, size_bytes=len(data)))
-    db.session.commit(); return jsonify(report=rdict(r), message="Report submitted for review. It is shown as unverified until an admin reviews it."), 201
+
+    # Alert all active police officers/administrators in real-time
+    for admin in User.query.filter_by(role="admin", is_active=True).all():
+        db.session.add(UserNotification(
+            user_id=admin.id,
+            title="🚨 New Citizen Complaint Registered",
+            body=f"Complaint #{r.id} ({r.category}) registered by {u.full_name} ({u.phone}) at {r.location_label or 'jurisdictional area'}."
+        ))
+
+    db.session.commit()
+    return jsonify(report=rdict(r, True), message="Complaint registered with police command center. Verified in real-time queue."), 201
 
 @bp.get("/reports")
 @login_required()
@@ -1577,11 +1587,123 @@ def a_toggle(u, uid):
     t.is_active = bool((request.get_json(silent=True) or {}).get("active")); audit(u, "set_user_active", "user", t.id, None, str(t.is_active)); db.session.commit()
     return jsonify(message="Updated")
 
+def sos_dict_rich(e):
+    if not e:
+        return None
+    d = e.to_dict()
+    user = db.session.get(User, e.user_id)
+    if user:
+        d["user_id"] = user.id
+        d["user_name"] = user.full_name
+        d["user_phone"] = user.phone
+        d["user_email"] = user.email
+        if hasattr(user, "medical_profile") and user.medical_profile:
+            d["medical_profile"] = user.medical_profile.to_dict()
+        else:
+            d["medical_profile"] = None
+        d["emergency_contacts"] = [c.to_dict() for c in user.contacts]
+    else:
+        d["user_id"] = e.user_id
+        d["user_name"] = f"Citizen #{e.user_id}"
+        d["user_phone"] = "N/A"
+        d["user_email"] = "N/A"
+        d["medical_profile"] = None
+        d["emergency_contacts"] = []
+    
+    d["jurisdiction_police_station"] = get_jurisdiction_police_station(e.lat, e.lng, "Kolhapur District")
+    return d
+
 @bp.get("/admin/sos")
 @login_required(["admin"])
 def a_sos(u):
-    pg, pp = page_args(); p = SosEvent.query.order_by(SosEvent.created_at.desc()).paginate(page=pg, per_page=pp, error_out=False)
-    return jsonify(items=[e.to_dict() | {"user_id": e.user_id} for e in p.items], total=p.total, page=pg)
+    pg, pp = page_args()
+    p = SosEvent.query.order_by(SosEvent.created_at.desc()).paginate(page=pg, per_page=pp, error_out=False)
+    return jsonify(items=[sos_dict_rich(e) for e in p.items], total=p.total, page=pg)
+
+@bp.post("/admin/sos/<int:sid>/dispatch")
+@login_required(["admin"])
+def a_sos_dispatch(u, sid):
+    ev = db.session.get(SosEvent, sid)
+    if not ev:
+        return jsonify(error="SOS distress event not found"), 404
+    d = request.get_json(silent=True) or {}
+    patrol_unit = (d.get("patrol_unit") or "Precinct Quick Response Team (QRT)").strip()
+    notes = (d.get("notes") or f"Police patrol unit '{patrol_unit}' dispatched by Officer {u.full_name}.").strip()
+    ev.status = "under_review" # Patrol Dispatched & En Route
+    ev.patrol_unit = patrol_unit
+    ev.dispatch_note = notes
+    audit(u, "dispatch_patrol_sos", "sos_event", ev.id, reason=notes)
+    
+    # Notify citizen in real-time
+    db.session.add(UserNotification(
+        user_id=ev.user_id,
+        title="🚨 POLICE PATROL DISPATCHED TO YOUR LOCATION",
+        body=f"Police unit '{patrol_unit}' has been dispatched to your GPS coordinates. Duty Officer: {u.full_name} ({u.phone}). Keep your phone nearby."
+    ))
+    db.session.commit()
+    return jsonify(message=f"Patrol unit '{patrol_unit}' dispatched to SOS #{ev.id}", sos=sos_dict_rich(ev))
+
+@bp.post("/admin/sos/<int:sid>/resolve")
+@login_required(["admin"])
+def a_sos_resolve(u, sid):
+    ev = db.session.get(SosEvent, sid)
+    if not ev:
+        return jsonify(error="SOS distress event not found"), 404
+    d = request.get_json(silent=True) or {}
+    notes = (d.get("notes") or f"Emergency handled & marked safe by Officer {u.full_name}.").strip()
+    ev.status = "resolved"
+    ev.resolved_at = datetime.utcnow()
+    ev.dispatch_note = notes
+    audit(u, "resolve_sos", "sos_event", ev.id, reason=notes)
+    
+    # Notify citizen
+    db.session.add(UserNotification(
+        user_id=ev.user_id,
+        title="✅ SOS EMERGENCY RESOLVED",
+        body=f"Your SOS distress event #{ev.id} was confirmed safe & resolved by police authority {u.full_name}."
+    ))
+    db.session.commit()
+    return jsonify(message=f"SOS #{ev.id} marked as resolved", sos=sos_dict_rich(ev))
+
+# ---------------- Module 17: Real-Time Police CAD Live Feed ----------------
+@bp.get("/admin/live-feed")
+@login_required(["admin"])
+def admin_live_feed(u):
+    last_sos_id = request.args.get("last_sos_id", 0, type=int)
+    last_report_id = request.args.get("last_report_id", 0, type=int)
+
+    # 1. Fetch new SOS events
+    if last_sos_id > 0:
+        new_sos = SosEvent.query.filter(SosEvent.id > last_sos_id).order_by(SosEvent.id.desc()).all()
+    else:
+        new_sos = SosEvent.query.order_by(SosEvent.id.desc()).limit(6).all()
+
+    # 2. Fetch all active/in-progress SOS events
+    active_sos = SosEvent.query.filter(SosEvent.status.in_(["active", "under_review"])).order_by(SosEvent.created_at.desc()).limit(15).all()
+
+    # 3. Fetch new incident complaints
+    if last_report_id > 0:
+        new_reports = IncidentReport.query.filter(IncidentReport.id > last_report_id).order_by(IncidentReport.id.desc()).all()
+    else:
+        new_reports = IncidentReport.query.order_by(IncidentReport.id.desc()).limit(6).all()
+
+    active_sos_count = SosEvent.query.filter(SosEvent.status.in_(["active", "under_review"])).count()
+    pending_reports_count = IncidentReport.query.filter_by(status="pending").count()
+
+    # Critical distress flag for alerts in last 20 minutes
+    twenty_mins_ago = datetime.utcnow() - timedelta(minutes=20)
+    recent_critical = SosEvent.query.filter(SosEvent.created_at >= twenty_mins_ago, SosEvent.status.in_(["active", "under_review"])).order_by(SosEvent.id.desc()).first()
+
+    return jsonify(
+        new_sos=[sos_dict_rich(e) for e in new_sos],
+        active_sos=[sos_dict_rich(e) for e in active_sos],
+        new_reports=[rdict(r, True) for r in new_reports],
+        active_sos_count=active_sos_count,
+        pending_reports_count=pending_reports_count,
+        has_critical_sos=bool(recent_critical),
+        critical_sos_event=sos_dict_rich(recent_critical) if recent_critical else None,
+        server_time=datetime.utcnow().isoformat()
+    )
 
 @bp.get("/admin/audit")
 @login_required(["admin"])

@@ -36,6 +36,30 @@ function Sos() {
     setErr("");
   };
 
+  // Real-time synchronization with Police CAD Dispatch while SOS modal is active
+  useEffect(() => {
+    if (!res?.sos?.id) return;
+    const sosId = res.sos.id;
+    let isMounted = true;
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await api(`/sos/${sosId}`);
+        if (!isMounted) return;
+        if (updated?.sos) {
+          setRes((prev) => (prev ? { ...prev, sos: { ...prev.sos, ...updated.sos } } : prev));
+        }
+      } catch (e) {
+        // silent fail
+      }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [res?.sos?.id]);
+
   const press = async () => {
     setBusy(true);
     setErr("");
@@ -154,6 +178,72 @@ function Sos() {
               </a>
             ) : (
               <span className="mut">{s.location_status}</span>
+            )}
+          </div>
+
+          {/* Real-time Police CAD Dispatch & Patrol Status Card */}
+          <div
+            style={{
+              background: s.status === "resolved"
+                ? "rgba(16, 185, 129, 0.15)"
+                : s.patrol_unit
+                ? "rgba(59, 130, 246, 0.2)"
+                : "rgba(245, 158, 11, 0.15)",
+              border: `1.5px solid ${
+                s.status === "resolved"
+                  ? "#10b981"
+                  : s.patrol_unit
+                  ? "#3b82f6"
+                  : "#f59e0b"
+              }`,
+              borderRadius: 8,
+              padding: "12px 14px",
+              marginBottom: 14
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <b style={{ color: "#fff", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: 6 }}>
+                {s.status === "resolved" ? (
+                  <>✅ Marked Safe by Police Authority</>
+                ) : s.patrol_unit ? (
+                  <>🚓 Police Patrol Unit Dispatched!</>
+                ) : (
+                  <>🚨 Live Police CAD Monitoring Active</>
+                )}
+              </b>
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  padding: "2px 7px",
+                  borderRadius: 4,
+                  fontWeight: 800,
+                  background: s.status === "resolved" ? "rgba(16, 185, 129, 0.3)" : s.patrol_unit ? "rgba(59, 130, 246, 0.3)" : "rgba(245, 158, 11, 0.3)",
+                  color: s.status === "resolved" ? "#4ade80" : s.patrol_unit ? "#93c5fd" : "#fde68a"
+                }}
+              >
+                {s.status === "resolved" ? "RESOLVED & SAFE" : s.patrol_unit ? "UNIT EN ROUTE" : "PRECINCT RADAR ACTIVE"}
+              </span>
+            </div>
+
+            {s.patrol_unit ? (
+              <div>
+                <p style={{ margin: "2px 0 6px", fontSize: "0.82rem", color: "#e2e8f0" }}>
+                  Assigned Patrol Unit: <b style={{ color: "#93c5fd" }}>{s.patrol_unit}</b> has been deployed and is responding to your live GPS coordinates.
+                </p>
+                {s.dispatch_note && (
+                  <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#cbd5e1", background: "rgba(0,0,0,0.3)", padding: "6px 8px", borderRadius: 4 }}>
+                    <b>Dispatch Instructions:</b> {s.dispatch_note}
+                  </p>
+                )}
+              </div>
+            ) : s.status === "resolved" ? (
+              <p style={{ margin: "2px 0 0", fontSize: "0.82rem", color: "#cbd5e1" }}>
+                Emergency incident has been marked safe and resolved by local police authorities.
+              </p>
+            ) : (
+              <p style={{ margin: "2px 0 0", fontSize: "0.82rem", color: "#cbd5e1" }}>
+                Your emergency distress signal and medical profile are transmitting live to the Police Command Center CAD radar (updates every 2.5s).
+              </p>
             )}
           </div>
 
