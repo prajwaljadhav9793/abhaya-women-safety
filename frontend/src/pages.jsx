@@ -712,6 +712,12 @@ export function Dashboard() {
   const firstName = user?.full_name ? user.full_name.split(" ")[0] : "User";
   const todayFormatted = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 
+  const handleHeroSosPress = () => {
+    window.dispatchEvent(new CustomEvent("abhaya-trigger-sos"));
+    const btn = document.querySelector("button.sos");
+    if (btn) btn.click();
+  };
+
   const featureTiles = [
     {
       to: "/journey",
@@ -860,71 +866,154 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Quick Metrics Strip */}
-      <div className="dash-stats-row">
-        <Link to="/contacts" className="dash-stat-card">
-          <div className="stat-card-top">
-            <span className="stat-label-text">Trusted Circle</span>
-            <div className="stat-icon-wrapper f-icon-red">
-              <Users size={18} />
+      {/* 3-Column Hero Command Center: Left 2 Stacked | Center Mega SOS | Right 2 Stacked */}
+      <div className="dash-hero-grid">
+        {/* Left Side: 2 Stacked Blocks (Trusted Circle up, Journey Guardian below) */}
+        <div className="dash-hero-side left">
+          {/* Top Left: Trusted Circle */}
+          <Link to="/contacts" className="dash-stat-card">
+            <div className="stat-card-top">
+              <div>
+                <span className="stat-label-text">Trusted Circle</span>
+                <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>
+                  Emergency Guardians
+                </div>
+              </div>
+              <div className="stat-icon-wrapper f-icon-red">
+                <Users size={18} />
+              </div>
             </div>
-          </div>
-          <div>
-            <div className="stat-value-big">{contactsList.length}</div>
-            <div className="stat-label-text">Priority Contacts</div>
-          </div>
-          <span className="stat-card-link-text">
-            View Circle <ChevronRight size={14} />
-          </span>
-        </Link>
+            <div>
+              <div className="stat-value-big">{contactsList.length}</div>
+              <div className="stat-label-text">
+                {hasContacts ? "Guardians Synced & Armed" : "No Contacts Configured"}
+              </div>
+            </div>
+            <span className="stat-card-link-text">
+              {hasContacts ? "Manage Circle" : "+ Add Guardian"} <ChevronRight size={14} />
+            </span>
+          </Link>
 
-        <Link to="/journey" className="dash-stat-card">
-          <div className="stat-card-top">
-            <span className="stat-label-text">Journey Guardian</span>
-            <div className="stat-icon-wrapper f-icon-blue">
-              <Navigation size={18} />
+          {/* Bottom Left: Journey Guardian */}
+          <Link to="/journey" className="dash-stat-card">
+            <div className="stat-card-top">
+              <div>
+                <span className="stat-label-text">Journey Guardian</span>
+                <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>
+                  Live Commute Tracker
+                </div>
+              </div>
+              <div className="stat-icon-wrapper f-icon-blue">
+                <Navigation size={18} />
+              </div>
             </div>
-          </div>
-          <div>
-            <div className="stat-value-big" style={{ fontSize: "1.3rem" }}>Ready</div>
-            <div className="stat-label-text">Deviation Guard Armed</div>
-          </div>
-          <span className="stat-card-link-text">
-            Start Commute <ChevronRight size={14} />
-          </span>
-        </Link>
+            <div>
+              <div className="stat-value-big" style={{ fontSize: "1.3rem" }}>Ready</div>
+              <div className="stat-label-text">Route Deviation Guard Armed</div>
+            </div>
+            <span className="stat-card-link-text">
+              Start Commute <ChevronRight size={14} />
+            </span>
+          </Link>
+        </div>
 
-        <Link to="/routes" className="dash-stat-card">
-          <div className="stat-card-top">
-            <span className="stat-label-text">Route Intelligence</span>
-            <div className="stat-icon-wrapper f-icon-purple">
-              <MapPin size={18} />
+        {/* Central Space: Big Hero SOS Button (Highlighted the Most) */}
+        <div className="dash-hero-center">
+          <div className="hero-sos-header">
+            <div className="hero-sos-pill">
+              <span className="hero-sos-live-dot"></span>
+              <span>EMERGENCY DISTRESS DISPATCH</span>
             </div>
+            <p className="hero-sos-subtitle">
+              One-Tap Police Precinct &amp; Contact Broadcast
+            </p>
           </div>
-          <div>
-            <div className="stat-value-big" style={{ fontSize: "1.3rem", color: "#34d399" }}>98% Safe</div>
-            <div className="stat-label-text">Kolhapur Safety Zone</div>
-          </div>
-          <span className="stat-card-link-text">
-            Find Safest Path <ChevronRight size={14} />
-          </span>
-        </Link>
 
-        <Link to="/fake-call" className="dash-stat-card">
-          <div className="stat-card-top">
-            <span className="stat-label-text">Discreet Escape</span>
-            <div className="stat-icon-wrapper f-icon-green">
-              <PhoneCall size={18} />
+          <div className="hero-sos-btn-wrapper">
+            <div className="hero-radar-ring ring-1"></div>
+            <div className="hero-radar-ring ring-2"></div>
+            <div className="hero-radar-ring ring-3"></div>
+
+            <button
+              type="button"
+              className="hero-sos-button"
+              onClick={handleHeroSosPress}
+              aria-label="Activate Emergency SOS Distress"
+              title="Click to instantly sound siren and dispatch emergency SOS with live GPS"
+            >
+              <span className="hero-sos-text">SOS</span>
+              <span className="hero-sos-subtext">PRESS FOR HELP</span>
+            </button>
+          </div>
+
+          <div className="hero-sos-footer">
+            <div className="hero-sos-meta-row">
+              <span className="hero-sos-meta-item">
+                <Radio size={13} color="#38bdf8" /> Live GPS Armed
+              </span>
+              <span>•</span>
+              <span className="hero-sos-meta-item">
+                <Users size={13} color="#f472b6" /> {contactsList.length} Guardians
+              </span>
+              <span>•</span>
+              <span className="hero-sos-meta-item">
+                <ShieldAlert size={13} color="#fca5a5" /> 112 CAD Linked
+              </span>
             </div>
+            <p className="hero-sos-caption">
+              ⚡ Sounds loud siren + transmits coordinates to police &amp; WhatsApp
+            </p>
           </div>
-          <div>
-            <div className="stat-value-big" style={{ fontSize: "1.3rem" }}>1-Tap</div>
-            <div className="stat-label-text">Simulated Incoming Call</div>
-          </div>
-          <span className="stat-card-link-text">
-            Trigger Simulator <ChevronRight size={14} />
-          </span>
-        </Link>
+        </div>
+
+        {/* Right Side: 2 Stacked Blocks (Route Intelligence up, Discreet Escape below) */}
+        <div className="dash-hero-side right">
+          {/* Top Right: Route Intelligence */}
+          <Link to="/routes" className="dash-stat-card">
+            <div className="stat-card-top">
+              <div>
+                <span className="stat-label-text">Route Intelligence</span>
+                <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>
+                  AI Safe Navigation
+                </div>
+              </div>
+              <div className="stat-icon-wrapper f-icon-purple">
+                <MapPin size={18} />
+              </div>
+            </div>
+            <div>
+              <div className="stat-value-big" style={{ fontSize: "1.3rem", color: "#34d399" }}>
+                98% Safe
+              </div>
+              <div className="stat-label-text">Kolhapur Safe Lighting Path</div>
+            </div>
+            <span className="stat-card-link-text">
+              Find Safest Path <ChevronRight size={14} />
+            </span>
+          </Link>
+
+          {/* Bottom Right: Discreet Escape */}
+          <Link to="/fake-call" className="dash-stat-card">
+            <div className="stat-card-top">
+              <div>
+                <span className="stat-label-text">Discreet Escape</span>
+                <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>
+                  Fake Call Simulator
+                </div>
+              </div>
+              <div className="stat-icon-wrapper f-icon-green">
+                <PhoneCall size={18} />
+              </div>
+            </div>
+            <div>
+              <div className="stat-value-big" style={{ fontSize: "1.3rem" }}>1-Tap</div>
+              <div className="stat-label-text">Simulated Incoming Call</div>
+            </div>
+            <span className="stat-card-link-text">
+              Trigger Simulator <ChevronRight size={14} />
+            </span>
+          </Link>
+        </div>
       </div>
 
       {/* Safety Modules Grid Hub */}

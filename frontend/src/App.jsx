@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { Routes, Route, Navigate, NavLink, Link, useNavigate, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, NavLink, Link, useNavigate, useLocation, Outlet } from "react-router-dom";
 import { Shield, Home, Users, Route as RouteIcon, Navigation, Flag, BarChart3, LifeBuoy, Bot, FolderLock, User, Settings, LogOut, PhoneCall, Menu, X, Bell, Sparkles, ShieldAlert, Volume2, VolumeX, ShieldCheck, FileText, Activity } from "lucide-react";
 import { api, tok, useLoad } from "./api.js";
 import * as P from "./pages.jsx";
@@ -10,6 +10,8 @@ import { playEmergencyAlarm, stopEmergencyAlarm, captureEmergencyCoordinates, is
 export { useAuth, Tag };
 
 function Sos() {
+  const location = useLocation();
+  const isDashboard = location.pathname === "/dashboard";
   const [res, setRes] = useState(null), [busy, setBusy] = useState(false), [err, setErr] = useState("");
   const [alarmActive, setAlarmActive] = useState(false);
 
@@ -61,6 +63,7 @@ function Sos() {
   }, [res?.sos?.id]);
 
   const press = async () => {
+    if (busy) return;
     setBusy(true);
     setErr("");
 
@@ -96,9 +99,26 @@ function Sos() {
     }
   };
 
+  // Listen for custom trigger from Hero SOS button on Dashboard
+  useEffect(() => {
+    const handleTrigger = () => {
+      press();
+    };
+    window.addEventListener("abhaya-trigger-sos", handleTrigger);
+    return () => {
+      window.removeEventListener("abhaya-trigger-sos", handleTrigger);
+    };
+  }, [busy]);
+
   const s = res?.sos;
   return <>
-    <button className="sos" onClick={press} disabled={busy} aria-label="SOS emergency">
+    <button
+      className="sos"
+      onClick={press}
+      disabled={busy}
+      aria-label="SOS emergency"
+      style={isDashboard ? { display: "none" } : undefined}
+    >
       {busy ? "..." : "SOS"}
     </button>
     {(res || err) && <div className="modal"><div className="card" style={{ maxWidth: 520, border: "2px solid #ef4444" }}>
