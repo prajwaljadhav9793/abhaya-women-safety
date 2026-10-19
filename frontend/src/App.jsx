@@ -201,6 +201,23 @@ function Sos() {
             )}
           </div>
 
+          {res.evidence_pdf_url && (
+            <div style={{ marginBottom: 14 }}>
+              <a
+                href={res.evidence_pdf_url}
+                target="_blank"
+                rel="noreferrer"
+                className="btn sm"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                📄 Download SOS Evidence PDF
+              </a>
+              <span className="mut" style={{ marginLeft: 8, fontSize: "0.78rem" }}>
+                Shared with emergency contacts; link expires in 7 days.
+              </span>
+            </div>
+          )}
+
           {/* Real-time Police CAD Dispatch & Patrol Status Card */}
           <div
             style={{
@@ -344,7 +361,10 @@ function Sos() {
               const phone = c.phone || c.recipient;
               const cleanP = (phone || "").replace(/\D/g, "");
               const locStr = s.map_url || "Location unavailable";
-              const sosText = encodeURIComponent(`🚨 ABHAYA EMERGENCY SOS! I need immediate help! Live Location: ${locStr}`);
+              const sosText = encodeURIComponent(
+                `🚨 ABHAYA EMERGENCY SOS! I need immediate help! Live Location: ${locStr} ` +
+                (res.evidence_pdf_url ? `SOS evidence PDF (link expires in 7 days): ${res.evidence_pdf_url}` : "")
+              );
               const waUrl = c.wa_url || (cleanP ? `https://wa.me/${cleanP}?text=${sosText}` : null);
               const smsUrl = c.sms_url || (cleanP ? `sms:${cleanP}?body=${sosText}` : null);
 

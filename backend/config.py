@@ -12,6 +12,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = _raw_db
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     CORS_ORIGINS = "*"
+    PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
     UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.getenv("UPLOAD_DIR", "../uploads")))
     MAX_CONTENT_LENGTH = 25 * 1024 * 1024
     JWT_ACCESS_TOKEN_EXPIRES = 60 * 60 * 8

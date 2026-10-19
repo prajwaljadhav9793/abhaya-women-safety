@@ -1,12 +1,56 @@
 from datetime import datetime
 import urllib.parse
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify, send_file, url_for
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from extensions import db, limiter
 from app.models import SosEvent, NotificationLog, EmergencyContact, User, UserNotification, Journey, JourneyLocation
 from app.services.notifications import send_sms, send_email, sms_configured, has_real_sms_provider
+from app.routes.pdf_generator import build_sos_pdf
 from app.utils import login_required
 
 bp = Blueprint("sos", __name__)
+SOS_PDF_LINK_MAX_AGE = 7 * 24 * 60 * 60
+SOS_PDF_LINK_SALT = "abhaya-sos-evidence-pdf-v1"
+
+
+def _sos_pdf_serializer():
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt=SOS_PDF_LINK_SALT)
+
+
+def _sos_pdf_url(event):
+    token = _sos_pdf_serializer().dumps({"event_id": event.id, "user_id": event.user_id})
+    base_url = current_app.config.get("PUBLIC_BASE_URL") or request.url_root.rstrip("/")
+    return f"{base_url}{url_for('sos.shared_sos_pdf', token=token)}"
+
+
+@bp.get("/sos/evidence/<token>.pdf")
+@limiter.limit("30 per hour")
+def shared_sos_pdf(token):
+    try:
+        payload = _sos_pdf_serializer().loads(token, max_age=SOS_PDF_LINK_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return jsonify(error="Evidence PDF link is invalid or expired"), 404
+
+    if not isinstance(payload, dict):
+        return jsonify(error="Evidence PDF link is invalid or expired"), 404
+    event_id, user_id = payload.get("event_id"), payload.get("user_id")
+    if not isinstance(event_id, int) or not isinstance(user_id, int):
+        return jsonify(error="Evidence PDF link is invalid or expired"), 404
+
+    event = db.session.get(SosEvent, event_id)
+    user = db.session.get(User, user_id)
+    if not event or not user or event.user_id != user.id:
+        return jsonify(error="Evidence PDF not found"), 404
+
+    response = send_file(
+        build_sos_pdf(event, user),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"abhaya_sos_dossier_{event.id}.pdf",
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 @bp.post("/sos")
 @login_required()
@@ -61,8 +105,10 @@ def trigger_sos(user):
 
     contacts = (EmergencyContact.query.filter_by(user_id=user.id, notify_on_sos=True)
                 .order_by(EmergencyContact.priority).all())
+    evidence_pdf_url = _sos_pdf_url(ev)
     msg = f"🚨 ABHAYA EMERGENCY SOS! {user.full_name} needs urgent help! " + \
-          (f"Live Location: {ev.map_url}" if ev.map_url else "Location unavailable.")
+          (f"Live Location: {ev.map_url}" if ev.map_url else "Location unavailable.") + \
+          f" SOS evidence PDF (link expires in 7 days): {evidence_pdf_url}"
     
     contacts_actions = []
     for c in contacts:
@@ -92,6 +138,7 @@ def trigger_sos(user):
             "relationship": c.relationship,
             "dispatch_status": res.get("status", "submitted_to_provider"),
             "provider_ref": res.get("provider_ref"),
+            "evidence_pdf_url": evidence_pdf_url,
             "auto_sent": True,
             "wa_url": wa_url,
             "sms_url": sms_url
@@ -110,6 +157,8 @@ def trigger_sos(user):
     
     has_gateway = has_real_sms_provider()
     return jsonify(sos=ev.to_dict(), warnings=warnings, contacts=contacts_actions, alert_message=msg,
+                   evidence_pdf_url=evidence_pdf_url,
+                   evidence_pdf_expires_in=SOS_PDF_LINK_MAX_AGE,
                    has_real_gateway=has_gateway,
                    auto_dispatched=True,
                    message="SOS event recorded. Emergency alerts automatically dispatched in real-time."), 201

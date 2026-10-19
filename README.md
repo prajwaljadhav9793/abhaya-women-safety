@@ -13,7 +13,7 @@
   - Real-time battery, speed, and GPS drift awareness.
 - **🚨 Emergency SOS Dispatch & Evidence Locker**:
   - Instant one-tap SOS trigger with automated SMS dispatch (Twilio integration with labelled Demo Fallback).
-  - Geolocation capture, timestamped alert logging, and automated police/contact notifications.
+  - Geolocation capture, timestamped alert logging, and automated police/contact notifications, including a signed SOS PDF link for emergency contacts (expires after 7 days).
   - Multi-media evidence vault with secure cloud upload and downloadable incident audit dossiers.
 - **🧭 Safe Route Intelligence & Risk Routing**:
   - Dynamic route calculation with safety penalty weights (lighting, past incident reports, time-of-day, proximity to verified safe zones).
@@ -69,6 +69,7 @@
 ## 🔒 Security & Privacy Notice
 - Do not commit `.env` or production API keys to GitHub.
 - Live SOS dispatch runs in labeled Demo Mode when Twilio credentials are not configured, preventing unintended SMS charges during evaluation and testing.
+- Set the backend `PUBLIC_BASE_URL` environment variable to the public backend origin (for example, `https://your-api.example.com`) so shared SOS PDF links work correctly behind reverse proxies. Links are signed, expire after 7 days, and grant access only to the dossier for that SOS event.
 
 ---
 
