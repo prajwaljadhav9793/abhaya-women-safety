@@ -14,25 +14,25 @@ def mk(c, e, ph):
     return {"Authorization": "Bearer " + c.post("/api/auth/login", json=dict(identifier=e, password="Passw0rd1")).json["token"]}
 
 def test_duplicate_and_bad_login(c):
-    mk(c, "a@x.co", "9876543210")
-    assert c.post("/api/auth/register", json=dict(full_name="T U", email="a@x.co", phone="9876543211", password="Passw0rd1", confirm_password="Passw0rd1")).status_code == 409
-    assert c.post("/api/auth/login", json=dict(identifier="a@x.co", password="bad")).status_code == 401
+    mk(c, "a@x.com", "9876543210")
+    assert c.post("/api/auth/register", json=dict(full_name="T U", email="a@x.com", phone="9876543211", password="Passw0rd1", confirm_password="Passw0rd1")).status_code == 409
+    assert c.post("/api/auth/login", json=dict(identifier="a@x.com", password="bad")).status_code == 401
 
 def test_isolation_and_admin(c):
-    a, b = mk(c, "a@x.co", "9876543210"), mk(c, "b@x.co", "9876543211")
+    a, b = mk(c, "a@x.com", "9876543210"), mk(c, "b@x.com", "9876543211")
     sid = c.post("/api/sos", json={"lat": 16.7, "lng": 74.2}, headers=a).json["sos"]["id"]
     assert c.get(f"/api/sos/{sid}", headers=b).status_code == 404
     assert c.get("/api/admin/users", headers=a).status_code == 403
     assert c.get("/api/admin/users").status_code == 401
 
 def test_sos_without_location_and_demo(c):
-    a = mk(c, "a@x.co", "9876543210"); r = c.post("/api/sos", json={"location_denied": True}, headers=a)
+    a = mk(c, "a@x.com", "9876543210"); r = c.post("/api/sos", json={"location_denied": True}, headers=a)
     assert r.status_code == 201 and r.json["sos"]["mode"] == "demo" and r.json["warnings"]
 
 def test_sos_shares_expiring_evidence_pdf_with_contacts(c, monkeypatch):
     import app.routes.sos as sos_routes
 
-    a = mk(c, "sos@x.co", "9876543210")
+    a = mk(c, "sos@x.com", "9876543210")
     contact = c.post("/api/contacts", json={
         "name": "Trusted Contact", "phone": "9876543211", "email": "contact@example.com"
     }, headers=a)
@@ -77,4 +77,4 @@ def test_flexible_phone_and_casing_login(c):
 def test_ai_unconfigured(c, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     # AI endpoint gracefully falls back with 200 and intelligent guidance
-    assert c.post("/api/ai/chat", json={"message": "hi"}, headers=mk(c, "a@x.co", "9876543210")).status_code == 200
+    assert c.post("/api/ai/chat", json={"message": "hi"}, headers=mk(c, "a@x.com", "9876543210")).status_code == 200

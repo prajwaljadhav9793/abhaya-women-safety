@@ -71,6 +71,17 @@
 - Live SOS dispatch runs in labeled Demo Mode when Twilio credentials are not configured, preventing unintended SMS charges during evaluation and testing.
 - Set the backend `PUBLIC_BASE_URL` environment variable to the public backend origin (for example, `https://your-api.example.com`) so shared SOS PDF links work correctly behind reverse proxies. Links are signed, expire after 7 days, and grant access only to the dossier for that SOS event.
 
+## 🧪 Backend Tests
+
+Install the backend development dependencies and run the API regression suite from the repository root:
+
+```bash
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest backend/tests
+```
+
+The input-validation tests cover account registration and password flows, emergency contacts, journey coordinates, and incident reports, including malformed input and valid submissions.
+
 ---
 
 ## 📜 License

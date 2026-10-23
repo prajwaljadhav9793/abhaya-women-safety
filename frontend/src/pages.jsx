@@ -12,6 +12,7 @@ import {
   FileDown, Download, FileText
 } from "lucide-react";
 import { api, useLoad, download } from "./api.js";
+import { EMAIL_PATTERN, MOBILE_PATTERN, isValidEmail, normalizeEmail } from "./validation.js";
 import { useAuth, Tag } from "./context/AuthContext.jsx";
 import SafeRouteIntelligence from "./SafeRouteIntelligence.jsx";
 import LiveJourneyGuardian from "./LiveJourneyGuardian.jsx";
@@ -34,7 +35,7 @@ const getPos = () => new Promise((res, rej) => navigator.geolocation ? navigator
 const geocode = async q => { const r = await (await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=" + encodeURIComponent(q))).json(); if (!r[0]) throw new Error("Indian place not found: " + q); return { pt: [+r[0].lat, +r[0].lon], label: r[0].display_name }; };
 const km = m => (m / 1000).toFixed(1) + " km", mins = s => Math.round(s / 60) + " min";
 const Err = ({ e }) => e ? <p className="err">{e}</p> : null;
-const Field = ({ l, err, ...p }) => <div><label>{l}</label><input {...p} />{err && <div className="err">{err}</div>}</div>;
+const Field = ({ l, err, ...p }) => <div><label>{l}</label><input {...(p.type === "email" ? { pattern: EMAIL_PATTERN } : {})} {...(p.name === "phone" ? { type: "tel", pattern: MOBILE_PATTERN, maxLength: 10, inputMode: "numeric" } : {})} {...p} />{err && <div className="err">{err}</div>}</div>;
 
 /* ---------- public ---------- */
 export function Landing() {
@@ -632,7 +633,7 @@ export function Landing() {
     </div>
   );
 }
-function useForm(init) { const [v, set] = useState(init); return [v, e => set({ ...v, [e.target.name]: e.target.value }), set]; }
+function useForm(init) { const [v, set] = useState(init); return [v, e => set({ ...v, [e.target.name]: e.target.name === "email" ? normalizeEmail(e.target.value) : e.target.value }), set]; }
 export const Login = LoginPage;
 
 export function Register() {
@@ -652,13 +653,20 @@ export function Register() {
         onSubmit={async ev => {
           ev.preventDefault();
           setE("");
+          const email = (v.email || "").trim();
+          if (!isValidEmail(email)) {
+            setF({ email: "Use a valid .com address and check the domain spelling." });
+            setE("Please correct the email address.");
+            return;
+          }
+          setF({});
           setBusy(true);
           try {
             const res = await api("/auth/register", {
               method: "POST",
               body: {
                 full_name: (v.full_name || "").trim(),
-                email: (v.email || "").trim(),
+                email,
                 phone: (v.phone || "").trim(),
                 password: v.password || "",
                 confirm_password: v.confirm_password || ""
@@ -1137,7 +1145,7 @@ export const Profile = ProfilePage;
 /* ---------- contacts ---------- */
 export function Contacts() {
   const { data, reload } = useLoad("/contacts"), [v, ch, set] = useForm({ name: "", relationship: "", phone: "", email: "", priority: 1 }), [e, setE] = useState(""), [f, setF] = useState({});
-  const save = async ev => { ev.preventDefault(); try { await api("/contacts", { method: "POST", body: v }); set({ name: "", relationship: "", phone: "", email: "", priority: 1 }); setE(""); setF({}); reload(); } catch (x) { setE(x.message); setF(x.fields || {}); } };
+  const save = async ev => { ev.preventDefault(); if (v.email.trim() && !isValidEmail(v.email)) { setF({ email: "Use a valid .com address and check the domain spelling." }); setE("Please correct the email address."); return; } setE(""); setF({}); try { await api("/contacts", { method: "POST", body: v }); set({ name: "", relationship: "", phone: "", email: "", priority: 1 }); setE(""); setF({}); reload(); } catch (x) { setE(x.message); setF(x.fields || {}); } };
   const upd = (c, b) => api("/contacts/" + c.id, { method: "PUT", body: b }).then(reload);
   return <><h2>Emergency contacts</h2><form className="card" onSubmit={save}><div className="grid"><Field l="Name" name="name" value={v.name} onChange={ch} err={f.name} /><Field l="Phone" name="phone" value={v.phone} onChange={ch} err={f.phone} /><Field l="Relationship" name="relationship" value={v.relationship} onChange={ch} /><Field l="Email (optional)" name="email" value={v.email} onChange={ch} err={f.email} /><Field l="Priority (1 = first)" name="priority" type="number" value={v.priority} onChange={ch} /></div><Err e={e} /><button className="btn">Add contact</button></form>
     {(data?.contacts || []).map(c => <div className="card row" key={c.id} style={{ justifyContent: "space-between" }}><div><b>{c.name}</b> <span className="mut">({c.relationship || "contact"}) {c.phone} - priority {c.priority}</span></div>
@@ -1333,4 +1341,3 @@ export function History() {
 
 /* ---------- admin ---------- */
 export const Admin = AdminPage;
-

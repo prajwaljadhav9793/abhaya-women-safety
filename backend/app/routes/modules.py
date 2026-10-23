@@ -36,6 +36,9 @@ def is_in_india(lat, lng):
         return 6.0 <= la <= 37.5 and 68.0 <= lo <= 97.5
     except (TypeError, ValueError):
         return False
+
+def is_coordinate_pair(coords):
+    return isinstance(coords, (list, tuple)) and len(coords) == 2 and all(num(value) is not None for value in coords)
 def audit(admin, action, ttype, tid, old=None, new=None, reason=None):
     db.session.add(AdminAction(admin_id=admin.id, action=action, target_type=ttype, target_id=tid, old_value=old, new_value=new, reason=reason))
 
@@ -44,8 +47,11 @@ def audit(admin, action, ttype, tid, old=None, new=None, reason=None):
 @login_required()
 def start_journey(u):
     d = request.get_json(silent=True) or {}
+    if not isinstance(d, dict): d = {}
     o, t = d.get("origin"), d.get("dest")
-    if not (o and t and num(o[0]) is not None and num(t[0]) is not None): return jsonify(error="Origin and destination required"), 422
+    if not (is_coordinate_pair(o) and is_coordinate_pair(t)):
+        return jsonify(error="Origin and destination coordinates required"), 422
+    o, t = [float(value) for value in o], [float(value) for value in t]
     if not (is_in_india(o[0], o[1]) and is_in_india(t[0], t[1])):
         return jsonify(error="Journey locations must be within India."), 422
     # Supersede any previously active journey so user can start a new route journey immediately
@@ -935,11 +941,14 @@ def rdict(r, admin=False):
 @limiter.limit("20 per hour")
 def submit_report(u):
     f = request.form if request.form else (request.get_json(silent=True) or {})
+    if not hasattr(f, "get"): f = {}
     errors = {}
     if f.get("category") not in CATEGORIES: errors["category"] = "Choose a category"
     if len((f.get("description") or "").strip()) < 10: errors["description"] = "Describe what happened (min 10 characters)"
     try: when = datetime.fromisoformat(f.get("incident_time"))
     except (TypeError, ValueError): when = None; errors["incident_time"] = "Valid date/time required"
+    try: severity = int(f.get("severity") or 2)
+    except (TypeError, ValueError): severity = None; errors["severity"] = "Choose a valid severity"
     files = request.files.getlist("files")
     if len(files) > MAX_FILES: errors["files"] = f"Max {MAX_FILES} files"
     for fl in files:
@@ -947,7 +956,7 @@ def submit_report(u):
     if errors: return jsonify(error="Validation failed", fields=errors), 422
     r = IncidentReport(user_id=u.id, category=f["category"], description=f["description"].strip(), incident_time=when,
                        lat=num(f.get("lat")), lng=num(f.get("lng")), location_label=(f.get("location_label") or "")[:255],
-                       severity=max(1, min(int(f.get("severity") or 2), 3)))
+                       severity=max(1, min(severity, 3)))
     db.session.add(r); db.session.flush()
     for fl in files:
         if not fl.filename: continue

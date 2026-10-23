@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useAuth, Tag } from "../context/AuthContext.jsx";
 import { api, download, useLoad } from "../api.js";
+import { MOBILE_PATTERN, isValidMobileNumber } from "../validation.js";
 import { playEmergencyAlarm, stopEmergencyAlarm, isEmergencyAlarmPlaying } from "../emergencyAudio.js";
 
 export default function ProfilePage() {
@@ -43,7 +44,7 @@ export default function ProfilePage() {
 
   // Form Fields: Core Profile
   const [fullName, setFullName] = useState(user?.full_name || "");
-  const [phone, setPhone] = useState(user?.phone || "");
+  const [phone, setPhone] = useState(user?.phone?.replace(/^\+91/, "") || "");
   const [locationSharing, setLocationSharing] = useState(user?.location_sharing_enabled ?? true);
   const [prefLang, setPrefLang] = useState(user?.preferred_language || "en");
 
@@ -88,7 +89,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (user) {
       setFullName(user.full_name || "");
-      setPhone(user.phone || "");
+      setPhone(user.phone?.replace(/^\+91/, "") || "");
       setLocationSharing(user.location_sharing_enabled ?? true);
       setPrefLang(user.preferred_language || "en");
       if (user.medical_profile) {
@@ -111,6 +112,10 @@ export default function ProfilePage() {
   // Save Profile Handler
   const handleSaveProfile = async (e) => {
     if (e) e.preventDefault();
+    if (!isValidMobileNumber(phone)) {
+      setSaveStatus("❌ Enter a valid 10-digit mobile number.");
+      return;
+    }
     setSaveLoading(true);
     setSaveStatus("");
 
@@ -512,6 +517,9 @@ export default function ProfilePage() {
                 <label style={{ fontWeight: 600, color: "#cbd5e1" }}>Mobile Phone Number (India & International)</label>
                 <input
                   type="tel"
+                  pattern={MOBILE_PATTERN}
+                  maxLength={10}
+                  inputMode="numeric"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+91 9876543210"
@@ -1003,4 +1011,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

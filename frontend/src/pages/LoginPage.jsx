@@ -22,6 +22,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { api } from "../api.js";
+import { EMAIL_PATTERN, MOBILE_PATTERN, isValidEmail, isValidMobileNumber, normalizeEmail } from "../validation.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function LoginPage({ initialPortal }) {
@@ -143,6 +144,14 @@ export default function LoginPage({ initialPortal }) {
       setError("Please complete all personal and contact fields.");
       return;
     }
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid .com email address.");
+      return;
+    }
+    if (!isValidMobileNumber(phone)) {
+      setError("Please enter a 10-digit mobile number.");
+      return;
+    }
     if (pw.length < 8) {
       setError("Password must be at least 8 characters with letters and numbers.");
       return;
@@ -243,6 +252,14 @@ export default function LoginPage({ initialPortal }) {
 
     if (!officerForm.full_name || !officerForm.email || !officerForm.phone) {
       setError("Please complete all personal and contact fields.");
+      return;
+    }
+    if (!isValidEmail(officerForm.email)) {
+      setError("Please enter a valid official .com email address.");
+      return;
+    }
+    if (!isValidMobileNumber(officerForm.phone)) {
+      setError("Please enter a 10-digit mobile number.");
       return;
     }
 
@@ -780,10 +797,11 @@ export default function LoginPage({ initialPortal }) {
                 </label>
                 <input
                   type="email"
+                  pattern={EMAIL_PATTERN}
                   required
                   placeholder="officer@police.gov.in"
                   value={officerForm.email}
-                  onChange={(e) => setOfficerForm({ ...officerForm, email: e.target.value })}
+                  onChange={(e) => setOfficerForm({ ...officerForm, email: normalizeEmail(e.target.value) })}
                   style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
                 />
               </div>
@@ -796,6 +814,9 @@ export default function LoginPage({ initialPortal }) {
                 </label>
                 <input
                   type="tel"
+                  pattern={MOBILE_PATTERN}
+                  maxLength={10}
+                  inputMode="numeric"
                   required
                   placeholder="9876543210"
                   value={officerForm.phone}
@@ -1082,10 +1103,11 @@ export default function LoginPage({ initialPortal }) {
                 </label>
                 <input
                   type="email"
+                  pattern={EMAIL_PATTERN}
                   required
                   placeholder="ananya@example.com"
                   value={citizenForm.email}
-                  onChange={(e) => setCitizenForm({ ...citizenForm, email: e.target.value })}
+                  onChange={(e) => setCitizenForm({ ...citizenForm, email: normalizeEmail(e.target.value) })}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
@@ -1105,6 +1127,9 @@ export default function LoginPage({ initialPortal }) {
                 </label>
                 <input
                   type="tel"
+                  pattern={MOBILE_PATTERN}
+                  maxLength={10}
+                  inputMode="numeric"
                   required
                   placeholder="9876543210"
                   value={citizenForm.phone}
@@ -1266,7 +1291,10 @@ export default function LoginPage({ initialPortal }) {
                   required
                   placeholder="e.g. ananya@example.com or 9876543210"
                   value={resetForm.identifier}
-                  onChange={(e) => setResetForm({ ...resetForm, identifier: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setResetForm({ ...resetForm, identifier: value.includes("@") ? normalizeEmail(value) : value });
+                  }}
                   style={{
                     width: "100%",
                     padding: "10px 12px 10px 38px",
@@ -1458,7 +1486,10 @@ export default function LoginPage({ initialPortal }) {
                 <input
                   type="text"
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setIdentifier(value.includes("@") ? normalizeEmail(value) : value);
+                  }}
                   placeholder={
                     isPolice
                       ? "demo.admin@abhaya.test or official email"

@@ -5,7 +5,7 @@ from flask_jwt_extended import create_access_token
 from sqlalchemy.exc import IntegrityError
 from extensions import db, limiter
 from app.models import User, OfficerProfile, UserMedicalProfile
-from app.utils import EMAIL_RE, PHONE_RE, clean_phone, valid_password, login_required
+from app.utils import is_valid_email, PHONE_RE, clean_phone, valid_password, login_required
 
 import re
 
@@ -60,16 +60,20 @@ def find_user_by_identifier(ident):
 @limiter.limit("20 per hour")
 def register():
     d = request.get_json(silent=True) or {}
-    name = (d.get("full_name") or "").strip()
-    email = (d.get("email") or "").strip().lower()
-    phone = clean_phone(d.get("phone"))
-    raw_pw = d.get("password") or ""
-    confirm_pw = d.get("confirm_password") or ""
+    if not isinstance(d, dict): d = {}
+    raw_name = d.get("full_name")
+    raw_email = d.get("email")
+    name = raw_name.strip() if isinstance(raw_name, str) else ""
+    email = raw_email.strip().lower() if isinstance(raw_email, str) else ""
+    raw_phone = d.get("phone")
+    phone = raw_phone.strip() if isinstance(raw_phone, str) else ""
+    raw_pw = d.get("password") if isinstance(d.get("password"), str) else ""
+    confirm_pw = d.get("confirm_password") if isinstance(d.get("confirm_password"), str) else ""
 
     errors = {}
     if len(name) < 2: errors["full_name"] = "Enter your full name"
-    if not EMAIL_RE.match(email): errors["email"] = "Enter a valid email address"
-    if not PHONE_RE.match(phone): errors["phone"] = "Enter a valid mobile number (10-15 digits)"
+    if not is_valid_email(email): errors["email"] = "Enter a valid email address and check the domain spelling"
+    if not PHONE_RE.fullmatch(phone): errors["phone"] = "Enter a valid 10-digit mobile number"
     if not valid_password(raw_pw): errors["password"] = "Min 8 characters with letters and numbers"
     if raw_pw != confirm_pw: errors["confirm_password"] = "Passwords do not match"
     if errors: return jsonify(error="Validation failed", fields=errors), 422
@@ -97,8 +101,10 @@ def register():
 @limiter.limit("25 per minute")
 def login():
     d = request.get_json(silent=True) or {}
-    ident = (d.get("identifier") or "").strip()
-    raw_pw = d.get("password") or ""
+    if not isinstance(d, dict): d = {}
+    raw_ident = d.get("identifier")
+    ident = raw_ident.strip() if isinstance(raw_ident, str) else ""
+    raw_pw = d.get("password") if isinstance(d.get("password"), str) else ""
     pw_strip = raw_pw.strip()
 
     if not ident:
@@ -122,9 +128,12 @@ def login():
 @limiter.limit("10 per hour")
 def reset_password():
     d = request.get_json(silent=True) or {}
-    ident = (d.get("identifier") or "").strip()
-    new_pw = d.get("new_password") or ""
-    confirm_pw = d.get("confirm_password") or new_pw
+    if not isinstance(d, dict): d = {}
+    raw_ident = d.get("identifier")
+    ident = raw_ident.strip() if isinstance(raw_ident, str) else ""
+    new_pw = d.get("new_password") if isinstance(d.get("new_password"), str) else ""
+    confirm_pw = d.get("confirm_password", new_pw)
+    if not isinstance(confirm_pw, str): confirm_pw = ""
 
     if not ident:
         return jsonify(error="Please provide your registered email or mobile number"), 422
@@ -158,7 +167,12 @@ def update_profile(user):
     if "full_name" in d and len(d["full_name"].strip()) >= 2:
         user.full_name = d["full_name"].strip()
     if "phone" in d:
-        p = clean_phone(d["phone"])
+        raw_phone = d["phone"]
+        p = raw_phone.strip() if isinstance(raw_phone, str) else ""
+        if p == user.phone:
+            p = ""
+        elif not PHONE_RE.fullmatch(p):
+            return jsonify(error="Enter a valid 10-digit mobile number"), 422
         if p and p != user.phone:
             existing = User.query.filter(User.phone == p, User.id != user.id).first()
             if existing:
@@ -243,7 +257,8 @@ def register_officer():
 
     name = (d.get("full_name") or "").strip()
     email = (d.get("email") or "").strip().lower()
-    phone = clean_phone(d.get("phone"))
+    raw_phone = d.get("phone")
+    phone = raw_phone.strip() if isinstance(raw_phone, str) else ""
     password = d.get("password") or ""
     confirm_pw = d.get("confirm_password") or password
     
@@ -255,8 +270,8 @@ def register_officer():
 
     errors = {}
     if len(name) < 2: errors["full_name"] = "Enter officer full name"
-    if not EMAIL_RE.match(email): errors["email"] = "Enter a valid official email"
-    if not PHONE_RE.match(phone): errors["phone"] = "Enter a valid mobile number (10-15 digits)"
+    if not is_valid_email(email): errors["email"] = "Enter a valid official email and check the domain spelling"
+    if not PHONE_RE.fullmatch(phone): errors["phone"] = "Enter a valid 10-digit mobile number"
     if not valid_password(password): errors["password"] = "Min 8 characters with letters & numbers"
     if password != confirm_pw: errors["confirm_password"] = "Passwords do not match"
 
@@ -333,4 +348,3 @@ def view_officer_id_proof(admin_user, uid):
     if not os.path.exists(file_path):
         return jsonify(error="ID proof file not found in repository"), 404
     return send_file(file_path, download_name=prof.id_proof_original_name or "officer_id_proof", as_attachment=False)
-

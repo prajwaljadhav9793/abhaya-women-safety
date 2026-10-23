@@ -42,6 +42,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { api, useLoad, download } from "../api.js";
+import { EMAIL_PATTERN, MOBILE_PATTERN, normalizeEmail } from "../validation.js";
 import { useAuth, Tag } from "../context/AuthContext.jsx";
 import { playPoliceDispatchChirp, playEmergencyDistressAlarm } from "../emergencyAudio.js";
 import SafetyIntelligenceDashboard from "../SafetyIntelligenceDashboard.jsx";
@@ -2772,10 +2773,11 @@ export default function AdminPage() {
                   </label>
                   <input
                     type="email"
+                    pattern={EMAIL_PATTERN}
                     required
                     placeholder="officer@police.gov.in"
                     value={newOfficer.email}
-                    onChange={(e) => setNewOfficer({ ...newOfficer, email: e.target.value })}
+                    onChange={(e) => setNewOfficer({ ...newOfficer, email: normalizeEmail(e.target.value) })}
                     style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.4)", color: "#fff", fontSize: "0.85rem" }}
                   />
                 </div>
@@ -2789,6 +2791,9 @@ export default function AdminPage() {
                   </label>
                   <input
                     type="tel"
+                    pattern={MOBILE_PATTERN}
+                    maxLength={10}
+                    inputMode="numeric"
                     required
                     placeholder="9876543210"
                     value={newOfficer.phone}
@@ -3511,4 +3516,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
