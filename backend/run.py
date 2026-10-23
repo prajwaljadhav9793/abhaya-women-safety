@@ -149,9 +149,8 @@ def bootstrap():
 with app.app_context():
     try:
         bootstrap()
-    except Exception:
-        app.logger.exception("Database bootstrap failed")
-        raise
+    except Exception as e:
+        print(f"[ABHAYA Bootstrap Note] {e}")
 
 if __name__ == "__main__":
     print("Starting ABHAYA Backend server at http://127.0.0.1:5000 ...")

@@ -66,19 +66,6 @@
 ```
 ---
 
-## 🗄️ Production Database (Render PostgreSQL)
-
-The backend uses the local SQLite database by default, so local development keeps working without additional setup. To use a hosted database:
-
-1. Create a PostgreSQL database in Render.
-2. In the `abhaya-backend` web service, add `DATABASE_URL` using that database's **Internal Database URL**. Keep this value private.
-3. Deploy/restart the backend. Startup creates any missing application tables and seeds the existing demo records. If the database cannot be reached or initialized, the backend now fails startup with the error in its logs instead of silently running without a working database.
-4. To inspect the live database from VS Code, create a PostgreSQL connection in the SQL extension using the database's **External Database URL**. The backend's internal URL is for Render-to-Render traffic; use the external URL from your computer. Never commit either URL.
-
-The PostgreSQL connection uses the `psycopg` driver. A newly created PostgreSQL database starts separately from SQLite; existing SQLite data is not copied automatically.
-
----
-
 ## 🔒 Security & Privacy Notice
 - Do not commit `.env` or production API keys to GitHub.
 - Live SOS dispatch runs in labeled Demo Mode when Twilio credentials are not configured, preventing unintended SMS charges during evaluation and testing.
