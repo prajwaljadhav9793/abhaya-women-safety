@@ -50,6 +50,7 @@ import {
 } from "chart.js";
 import { Bar, Line, Doughnut } from "react-chartjs-2";
 import { api, useLoad } from "./api.js";
+import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
 import { useAuth } from "./context/AuthContext.jsx";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend, Filler);
@@ -1529,8 +1530,9 @@ export default function SafetyIntelligenceDashboard() {
                 style={{ height: "100%", width: "100%", background: "#0B1020" }}
               >
                 <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution={MAP_TILE_ATTRIBUTION}
+                  url={MAP_TILE_URL}
+                  subdomains="abcd"
                 />
                 <FitMapBounds pins={data?.map_pins} />
 

@@ -8,6 +8,7 @@ import {
   Crosshair, ExternalLink, Sparkles, Building2, Layers, Search, X, Check, Compass
 } from "lucide-react";
 import { api } from "./api.js";
+import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
 
 // Clean custom Leaflet pin icons
 const createPinIcon = (color, label = "") => L.divIcon({
@@ -1026,8 +1027,9 @@ export default function SafeRouteIntelligence() {
                 style={{ height: "100%", width: "100%" }}
               >
                 <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution={MAP_TILE_ATTRIBUTION}
+                  url={MAP_TILE_URL}
+                  subdomains="abcd"
                 />
 
                 {/* Auto Bounds Controller */}

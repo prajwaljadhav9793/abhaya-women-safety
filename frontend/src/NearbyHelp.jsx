@@ -8,6 +8,7 @@ import {
   Building2, Sparkles, Filter, CheckCircle2, Info, RefreshCw, X, Radio
 } from "lucide-react";
 import { api } from "./api.js";
+import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
 
 const DEFAULT_CENTER = [16.705, 74.243]; // Kolhapur City Center
 
@@ -623,8 +624,9 @@ export default function NearbyHelp() {
               scrollWheelZoom={true}
             >
               <TileLayer
-                attribution="&copy; OpenStreetMap contributors"
-                url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution={MAP_TILE_ATTRIBUTION}
+                url={MAP_TILE_URL}
+                subdomains="abcd"
               />
 
               <MapController
@@ -816,4 +818,3 @@ export default function NearbyHelp() {
     </div>
   );
 }
-

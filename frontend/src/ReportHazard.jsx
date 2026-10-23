@@ -38,6 +38,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { api, useLoad, download } from "./api.js";
+import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
 import { Tag } from "./context/AuthContext.jsx";
 
 // Custom Leaflet Selected Pin Icon
@@ -890,8 +891,9 @@ export default function ReportHazard() {
                 style={{ width: "100%", height: "100%" }}
               >
                 <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution={MAP_TILE_ATTRIBUTION}
+                  url={MAP_TILE_URL}
+                  subdomains="abcd"
                 />
                 <MapClickPicker position={mapPinPos} onPick={handleMapPick} />
                 {mapPinPos && <MapPanController center={mapPinPos} />}
@@ -1354,8 +1356,9 @@ export default function ReportHazard() {
               style={{ width: "100%", height: "100%" }}
             >
               <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution={MAP_TILE_ATTRIBUTION}
+                url={MAP_TILE_URL}
+                subdomains="abcd"
               />
 
               {communityPins.map(p => {
