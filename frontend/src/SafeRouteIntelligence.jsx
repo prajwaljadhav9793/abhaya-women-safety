@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, Marker, useMap } from "react-leaflet";
+import { MapContainer, CircleMarker, Polyline, Popup, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import {
   Shield, ShieldCheck, ShieldAlert, Navigation, MapPin, Clock,
@@ -8,7 +8,7 @@ import {
   Crosshair, ExternalLink, Sparkles, Building2, Layers, Search, X, Check, Compass
 } from "lucide-react";
 import { api } from "./api.js";
-import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
+import MapTileLayer from "./MapTileLayer.jsx";
 
 // Clean custom Leaflet pin icons
 const createPinIcon = (color, label = "") => L.divIcon({
@@ -1026,11 +1026,7 @@ export default function SafeRouteIntelligence() {
                 zoom={13}
                 style={{ height: "100%", width: "100%" }}
               >
-                <TileLayer
-                  attribution={MAP_TILE_ATTRIBUTION}
-                  url={MAP_TILE_URL}
-                  subdomains="abcd"
-                />
+                <MapTileLayer />
 
                 {/* Auto Bounds Controller */}
                 {currentRouteOption && (

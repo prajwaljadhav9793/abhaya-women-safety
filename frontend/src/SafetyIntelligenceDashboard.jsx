@@ -35,7 +35,7 @@ import {
   FileCheck2,
   Download
 } from "lucide-react";
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap, Circle } from "react-leaflet";
+import { MapContainer, CircleMarker, Popup, useMap, Circle } from "react-leaflet";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -50,7 +50,7 @@ import {
 } from "chart.js";
 import { Bar, Line, Doughnut } from "react-chartjs-2";
 import { api, useLoad } from "./api.js";
-import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
+import MapTileLayer from "./MapTileLayer.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend, Filler);
@@ -1529,11 +1529,7 @@ export default function SafetyIntelligenceDashboard() {
                 zoom={13}
                 style={{ height: "100%", width: "100%", background: "#0B1020" }}
               >
-                <TileLayer
-                  attribution={MAP_TILE_ATTRIBUTION}
-                  url={MAP_TILE_URL}
-                  subdomains="abcd"
-                />
+                <MapTileLayer />
                 <FitMapBounds pins={data?.map_pins} />
 
                 {/* Markers Mode */}

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, useMap } from "react-leaflet";
+import { MapContainer, CircleMarker, Polyline, Popup, useMap } from "react-leaflet";
 import { Chart as C, CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend } from "chart.js";
 import { Bar, Line, Doughnut } from "react-chartjs-2";
 import { 
@@ -12,7 +12,7 @@ import {
   FileDown, Download, FileText
 } from "lucide-react";
 import { api, useLoad, download } from "./api.js";
-import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
+import MapTileLayer from "./MapTileLayer.jsx";
 import { EMAIL_PATTERN, MOBILE_PATTERN, isValidEmail, normalizeEmail } from "./validation.js";
 import { useAuth, Tag } from "./context/AuthContext.jsx";
 import SafeRouteIntelligence from "./SafeRouteIntelligence.jsx";
@@ -31,7 +31,7 @@ C.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Ar
 
 const DEF = [16.705, 74.243];
 const Fit = ({ pts }) => { const m = useMap(); useEffect(() => { if (pts?.length) m.fitBounds(pts, { padding: [30, 30], maxZoom: 16 }); }, [JSON.stringify(pts)]); return null; };
-const Map = ({ children, pts, center = DEF }) => <MapContainer center={center} zoom={13} className="map"><TileLayer attribution={MAP_TILE_ATTRIBUTION} url={MAP_TILE_URL} subdomains="abcd" />{pts && <Fit pts={pts} />}{children}</MapContainer>;
+const Map = ({ children, pts, center = DEF }) => <MapContainer center={center} zoom={13} className="map"><MapTileLayer />{pts && <Fit pts={pts} />}{children}</MapContainer>;
 const getPos = () => new Promise((res, rej) => navigator.geolocation ? navigator.geolocation.getCurrentPosition(p => res([p.coords.latitude, p.coords.longitude]), () => rej(new Error("Location permission denied or unavailable. Enter a place manually.")), { timeout: 10000 }) : rej(new Error("Geolocation unsupported")));
 const geocode = async q => { const r = await (await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=" + encodeURIComponent(q))).json(); if (!r[0]) throw new Error("Indian place not found: " + q); return { pt: [+r[0].lat, +r[0].lon], label: r[0].display_name }; };
 const km = m => (m / 1000).toFixed(1) + " km", mins = s => Math.round(s / 60) + " min";

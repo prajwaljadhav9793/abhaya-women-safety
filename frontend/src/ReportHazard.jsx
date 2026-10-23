@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   MapContainer,
-  TileLayer,
   Marker,
   Popup,
   CircleMarker,
@@ -38,7 +37,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { api, useLoad, download } from "./api.js";
-import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
+import MapTileLayer from "./MapTileLayer.jsx";
 import { Tag } from "./context/AuthContext.jsx";
 
 // Custom Leaflet Selected Pin Icon
@@ -890,11 +889,7 @@ export default function ReportHazard() {
                 zoom={14}
                 style={{ width: "100%", height: "100%" }}
               >
-                <TileLayer
-                  attribution={MAP_TILE_ATTRIBUTION}
-                  url={MAP_TILE_URL}
-                  subdomains="abcd"
-                />
+                <MapTileLayer />
                 <MapClickPicker position={mapPinPos} onPick={handleMapPick} />
                 {mapPinPos && <MapPanController center={mapPinPos} />}
               </MapContainer>
@@ -1355,11 +1350,7 @@ export default function ReportHazard() {
               zoom={13}
               style={{ width: "100%", height: "100%" }}
             >
-              <TileLayer
-                attribution={MAP_TILE_ATTRIBUTION}
-                url={MAP_TILE_URL}
-                subdomains="abcd"
-              />
+              <MapTileLayer />
 
               {communityPins.map(p => {
                 const isVerified = p.status === "verified";

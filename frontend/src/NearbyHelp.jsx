@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap, Tooltip } from "react-leaflet";
+import { MapContainer, CircleMarker, Popup, useMap, Tooltip } from "react-leaflet";
 import {
   Shield, ShieldCheck, MapPin, Phone, PhoneCall, Navigation,
   Compass, Search, Crosshair, Clock, ExternalLink, Share2, Copy,
@@ -8,7 +8,7 @@ import {
   Building2, Sparkles, Filter, CheckCircle2, Info, RefreshCw, X, Radio
 } from "lucide-react";
 import { api } from "./api.js";
-import { MAP_TILE_ATTRIBUTION, MAP_TILE_URL } from "./mapTiles.js";
+import MapTileLayer from "./MapTileLayer.jsx";
 
 const DEFAULT_CENTER = [16.705, 74.243]; // Kolhapur City Center
 
@@ -623,11 +623,7 @@ export default function NearbyHelp() {
               className="nearby-leaflet-map"
               scrollWheelZoom={true}
             >
-              <TileLayer
-                attribution={MAP_TILE_ATTRIBUTION}
-                url={MAP_TILE_URL}
-                subdomains="abcd"
-              />
+              <MapTileLayer />
 
               <MapController
                 center={searchCenter}
