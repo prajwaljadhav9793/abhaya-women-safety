@@ -79,8 +79,31 @@ export async function api(path, opt) {
   return d;
 }
 export async function download(path, name) {
-  const r = await raw(path); if (!r.ok) throw new Error("Download failed");
-  const u = URL.createObjectURL(await r.blob()); const a = document.createElement("a"); a.href = u; a.download = name; a.click(); URL.revokeObjectURL(u);
+  const r = await raw(path);
+  if (!r.ok) {
+    const contentType = r.headers.get("content-type") || "";
+    let message = `Download failed (HTTP ${r.status})`;
+    if (contentType.includes("application/json")) {
+      const data = await r.json();
+      message = data.error || data.message || message;
+    } else if (contentType.includes("text/plain")) {
+      message = (await r.text()).trim() || message;
+    }
+    throw Object.assign(new Error(message), { status: r.status });
+  }
+
+  const blob = await r.blob();
+  if (!blob.size) throw new Error("The server returned an empty PDF. Please try again.");
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export function useLoad(path, deps = []) {
   const [data, setData] = useState(null), [err, setErr] = useState(""), [loading, setL] = useState(true);
