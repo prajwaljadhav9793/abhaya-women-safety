@@ -149,7 +149,7 @@ def trigger_sos(user):
                                        status="not_configured", error="No emergency contacts with SOS alerts enabled"))
     for admin in User.query.filter_by(role="admin", is_active=True).all():
         db.session.add(UserNotification(user_id=admin.id, title="SOS event",
-                                        body=f"SOS #{ev.id} from user {user.id}"))
+                                         body=f"SOS #{ev.id} from user {user.id}"))
     db.session.commit()
     warnings = []
     if ev.location_status != "captured": warnings.append("Location was not captured; contacts were told it is unavailable.")
@@ -185,3 +185,93 @@ def resolve_sos(user, eid):
     if not ev: return jsonify(error="SOS event not found"), 404
     ev.status, ev.resolved_at = "resolved", datetime.utcnow()
     db.session.commit(); return jsonify(sos=ev.to_dict())
+
+@bp.post("/sos/<int:eid>/send-all")
+@login_required()
+@limiter.limit("30 per hour")
+def send_all_sos(user, eid):
+    ev = SosEvent.query.filter_by(id=eid, user_id=user.id).first()
+    if not ev:
+        return jsonify(error="SOS event not found"), 404
+
+    contacts = (EmergencyContact.query.filter_by(user_id=user.id, notify_on_sos=True)
+                .order_by(EmergencyContact.priority).all())
+    if not contacts:
+        contacts = (EmergencyContact.query.filter_by(user_id=user.id)
+                    .order_by(EmergencyContact.priority).all())
+
+    if not contacts:
+        return jsonify(error="No emergency contacts found to dispatch alerts"), 400
+
+    evidence_pdf_url = _sos_pdf_url(ev)
+    loc_part = f"Live Location: {ev.map_url}" if ev.map_url else "Location unavailable."
+    msg = f"🚨 ABHAYA EMERGENCY SOS! {user.full_name} needs urgent help! {loc_part} SOS evidence PDF (link expires in 7 days): {evidence_pdf_url}"
+
+    contacts_actions = []
+    for c in contacts:
+        res = send_sms(c.phone, msg)
+        db.session.add(NotificationLog(sos_event_id=ev.id, contact_id=c.id, channel="sms",
+                                       recipient=c.phone, status=res["status"],
+                                       provider_ref=res.get("provider_ref"), error=res.get("error")))
+        if c.email:
+            res_e = send_email(c.email, f"EMERGENCY SOS: {user.full_name} needs immediate help", msg)
+            if res_e.get("status") != "not_configured":
+                db.session.add(NotificationLog(sos_event_id=ev.id, contact_id=c.id, channel="email",
+                                               recipient=c.email, status=res_e["status"],
+                                               provider_ref=res_e.get("provider_ref"), error=res_e.get("error")))
+
+        clean_num = "".join(filter(str.isdigit, c.phone or ""))
+        wa_num = clean_num
+        if len(clean_num) == 10 and clean_num[0] in "6789":
+            wa_num = "91" + clean_num
+        elif len(clean_num) == 11 and clean_num.startswith("0"):
+            wa_num = "91" + clean_num[1:]
+        wa_url = f"https://wa.me/{wa_num}?text={urllib.parse.quote(msg)}" if wa_num else ""
+        sms_url = f"sms:{clean_num}?body={urllib.parse.quote(msg)}" if clean_num else ""
+        contacts_actions.append({
+            "id": c.id,
+            "name": c.name,
+            "phone": c.phone,
+            "relationship": c.relationship,
+            "dispatch_status": res.get("status", "submitted_to_provider"),
+            "provider_ref": res.get("provider_ref"),
+            "evidence_pdf_url": evidence_pdf_url,
+            "auto_sent": True,
+            "wa_url": wa_url,
+            "sms_url": sms_url
+        })
+
+    db.session.commit()
+    submitted_count = sum(
+        contact["dispatch_status"] in ("submitted_to_provider", "provider_confirmed")
+        for contact in contacts_actions
+    )
+    all_submitted = submitted_count == len(contacts_actions)
+    if all_submitted:
+        message = f"Emergency alerts submitted to the messaging provider for all {len(contacts)} contacts."
+    elif submitted_count == 0 and all(
+        contact["dispatch_status"] == "demo_simulated" for contact in contacts_actions
+    ):
+        message = "No real SMS was sent because a messaging provider is not configured."
+    else:
+        message = f"Emergency alerts submitted for {submitted_count} of {len(contacts)} contacts. Check each contact's status."
+
+    return jsonify(
+        success=all_submitted,
+        message=message,
+        submitted_count=submitted_count,
+        contacts_count=len(contacts),
+        contacts=contacts_actions,
+        sos=ev.to_dict(),
+        alert_message=msg,
+        has_real_gateway=has_real_sms_provider()
+    ), 200
+
+@bp.post("/sos/send-all")
+@login_required()
+@limiter.limit("30 per hour")
+def send_all_sos_latest(user):
+    ev = SosEvent.query.filter_by(user_id=user.id).order_by(SosEvent.created_at.desc()).first()
+    if not ev:
+        return jsonify(error="No active SOS event found"), 404
+    return send_all_sos(user, ev.id)

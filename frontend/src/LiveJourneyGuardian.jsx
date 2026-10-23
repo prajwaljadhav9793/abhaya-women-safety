@@ -243,6 +243,9 @@ export default function LiveJourneyGuardian() {
   const [sosStatus, setSosStatus] = useState("");
   const [sosLoading, setSosLoading] = useState(false);
   const [sosResult, setSosResult] = useState(null); // Real SOS dispatch result with contacts and WhatsApp links
+  const [journeySosSendingAll, setJourneySosSendingAll] = useState(false);
+  const [journeySosSendAllFeedback, setJourneySosSendAllFeedback] = useState(null);
+  const [journeySosSentAllSuccess, setJourneySosSentAllSuccess] = useState(false);
   const [safeCheckinMsg, setSafeCheckinMsg] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [deviationPrompt, setDeviationPrompt] = useState(0); // Countdown in seconds if deviation
@@ -634,6 +637,73 @@ export default function LiveJourneyGuardian() {
     } finally {
       setSosLoading(false);
     }
+  };
+
+  const handleJourneySosSendAll = async () => {
+    const sosId = sosResult?.sos?.id;
+    if (!sosId || journeySosSendingAll) return;
+    setJourneySosSendingAll(true);
+    setJourneySosSendAllFeedback(null);
+
+    const contactList = (sosResult.contacts && sosResult.contacts.length > 0) ? sosResult.contacts : [];
+
+    try {
+      const result = await api(`/sos/${sosId}/send-all`, { method: "POST" });
+      if (result?.sos) {
+        setSosResult((prev) => ({
+          ...prev,
+          sos: { ...prev.sos, ...result.sos },
+          contacts: result.contacts || prev.contacts
+        }));
+      } else if (result?.contacts) {
+        setSosResult((prev) => ({
+          ...prev,
+          contacts: result.contacts
+        }));
+      }
+
+      setJourneySosSentAllSuccess(Boolean(result.success));
+      setJourneySosSendAllFeedback({
+        type: result.success ? "success" : "error",
+        message: result.message || `Emergency alerts submitted for ${result.submitted_count || 0} of ${contactList.length} contacts.`
+      });
+    } catch (e) {
+      setJourneySosSendAllFeedback({
+        type: "error",
+        message: e.message || "Failed to dispatch alerts to all contacts. Please try individual backup buttons."
+      });
+    } finally {
+      setJourneySosSendingAll(false);
+    }
+  };
+
+  const handleJourneySosSendAllWhatsApp = () => {
+    const contactList = (sosResult?.contacts && sosResult.contacts.length > 0) ? sosResult.contacts : [];
+    if (!contactList.length) return;
+
+    const locStr = sosResult?.sos?.map_url || (currentPos ? `https://www.google.com/maps?q=${currentPos[0]},${currentPos[1]}` : "Location unavailable");
+    const sosText = encodeURIComponent(
+      `🚨 ABHAYA EMERGENCY SOS! I need immediate help! Live Location: ${locStr} ` +
+      (sosResult?.evidence_pdf_url ? `SOS evidence PDF (link expires in 7 days): ${sosResult.evidence_pdf_url}` : "")
+    );
+
+    setJourneySosSendAllFeedback({
+      type: "info",
+      message: `📲 Launching WhatsApp for all ${contactList.length} contacts... (Please allow popups if prompted)`
+    });
+
+    contactList.forEach((c, idx) => {
+      const cleanP = (c.phone || "").replace(/\D/g, "");
+      let waNum = cleanP;
+      if (waNum.length === 10 && "6789".includes(waNum[0])) waNum = "91" + waNum;
+      else if (waNum.length === 11 && waNum.startsWith("0")) waNum = "91" + waNum.slice(1);
+      const url = c.wa_url || (waNum ? `https://wa.me/${waNum}?text=${sosText}` : null);
+      if (url) {
+        setTimeout(() => {
+          window.open(url, `_blank_wa_${idx}`);
+        }, idx * 450);
+      }
+    });
   };
 
   // -------------------------------------------------------------------------
@@ -2665,94 +2735,253 @@ export default function LiveJourneyGuardian() {
             )}
 
             {/* Direct Send to Emergency Contacts */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: 6 }}>
-                  ⚡ All Emergency Contacts:
-                </div>
-                <span className="badge b-verified" style={{ background: "#10b981", color: "#fff", fontSize: "0.75rem", padding: "3px 8px", fontWeight: "bold" }}>
-                  {sosResult.has_real_gateway ? "AUTO-DISPATCHED" : "REGISTERED"}
-                </span>
-              </div>
-              <p className="mut" style={{ fontSize: "0.82rem", margin: "0 0 10px", lineHeight: 1.4 }}>
-                Emergency notifications with your exact live GPS link were automatically sent via server gateway to all your registered contacts. No manual sending needed!
-              </p>
+            {(() => {
+              const journeyContactList = sosResult.contacts || [];
+              const journeyCleanPhones = journeyContactList
+                .map((c) => (c.phone || "").replace(/\D/g, ""))
+                .filter(Boolean);
+              const isIOSClient = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
+              const journeyGroupSmsDelimiter = isIOSClient ? ";" : ",";
+              const journeyLocStr = sosResult.sos?.map_url || (currentPos ? `https://www.google.com/maps?q=${currentPos[0]},${currentPos[1]}` : "Location unavailable");
+              const journeySosText = encodeURIComponent(
+                `🚨 ABHAYA EMERGENCY SOS! I need immediate help! Live Location: ${journeyLocStr} ` +
+                (sosResult.evidence_pdf_url ? `SOS evidence PDF (link expires in 7 days): ${sosResult.evidence_pdf_url}` : "")
+              );
+              const journeyGroupSmsUrl = journeyCleanPhones.length > 0
+                ? `sms:${journeyCleanPhones.join(journeyGroupSmsDelimiter)}${isIOSClient ? "&" : "?"}body=${journeySosText}`
+                : null;
 
-              {sosResult.contacts && sosResult.contacts.length > 0 ? (
-                sosResult.contacts.map(c => {
-                  const name = c.name || "Emergency Contact";
-                  const phone = c.phone || "";
-                  const waUrl = c.wa_url;
-                  const smsUrl = c.sms_url;
-
-                  return (
-                    <div
-                      key={c.id || phone}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        background: "rgba(16, 185, 129, 0.08)",
-                        padding: "10px 14px",
-                        borderRadius: 8,
-                        marginBottom: 8,
-                        border: "1px solid rgba(16, 185, 129, 0.3)",
-                        flexWrap: "wrap",
-                        gap: 8
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-                          {name} {c.relationship ? <span className="mut" style={{ fontSize: "0.75rem", fontWeight: "normal" }}>({c.relationship})</span> : null}
-                          <span style={{ fontSize: "0.7rem", background: "rgba(16, 185, 129, 0.2)", color: "#34d399", padding: "2px 6px", borderRadius: 4, fontWeight: "bold" }}>
-                            ⚡ Auto-Sent
-                          </span>
-                        </div>
-                        <div className="mut" style={{ fontSize: "0.8rem", marginTop: 2 }}>{phone} &bull; <span style={{ color: "#34d399" }}>Delivered to Emergency Gateway</span></div>
-                      </div>
-
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {waUrl && (
-                          <a
-                            href={waUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="btn sm"
-                            title="Optional backup WhatsApp message"
-                            style={{ background: "#25D366", color: "#fff", textDecoration: "none", fontSize: "0.8rem", padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          >
-                            💬 WhatsApp (Backup)
-                          </a>
-                        )}
-                        {smsUrl && (
-                          <a
-                            href={smsUrl}
-                            className="btn sm ghost"
-                            title="Optional backup device SMS"
-                            style={{ textDecoration: "none", fontSize: "0.8rem", padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          >
-                            📱 SMS (Backup)
-                          </a>
-                        )}
-                        {phone && (
-                          <a
-                            href={`tel:${phone}`}
-                            className="btn sm red"
-                            style={{ textDecoration: "none", fontSize: "0.8rem", padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          >
-                            📞 Direct Call
-                          </a>
-                        )}
-                      </div>
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: 6 }}>
+                      ⚡ All Emergency Contacts:
                     </div>
-                  );
-                })
-              ) : (
-                <div style={{ padding: "10px 14px", background: "rgba(245, 158, 11, 0.1)", border: "1px solid #f59e0b", borderRadius: 8, color: "#fcd34d", fontSize: "0.85rem" }}>
-                  ⚠️ No emergency contacts registered with SOS alerts enabled. Please add your trusted contacts in the Contacts module.
+                    <span className="badge b-verified" style={{ background: (sosResult.has_real_gateway || journeySosSentAllSuccess) ? "#10b981" : "#3b82f6", color: "#fff", fontSize: "0.75rem", padding: "3px 8px", fontWeight: "bold" }}>
+                      {journeySosSentAllSuccess ? "SUBMITTED TO PROVIDER" : sosResult.has_real_gateway ? "AUTO-DISPATCHED" : "REGISTERED"}
+                    </span>
+                  </div>
+
+                  {/* PROMINENT SEND ALL CONTACTS ACTION CARD */}
+                  <div
+                    style={{
+                      background: journeySosSentAllSuccess ? "rgba(16, 185, 129, 0.15)" : "linear-gradient(135deg, rgba(239, 68, 68, 0.16) 0%, rgba(185, 28, 28, 0.22) 100%)",
+                      border: `1.5px solid ${journeySosSentAllSuccess ? "#10b981" : "#ef4444"}`,
+                      borderRadius: 8,
+                      padding: "12px 14px",
+                      marginBottom: 12
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+                      <div>
+                        <b style={{ color: journeySosSentAllSuccess ? "#34d399" : "#fff", fontSize: "0.9rem", display: "flex", alignItems: "center", gap: 6 }}>
+                          📢 Send SOS Alert to All Contacts ({journeyContactList.length})
+                        </b>
+                        <div style={{ fontSize: "0.76rem", color: journeySosSentAllSuccess ? "#a7f3d0" : "#fca5a5", marginTop: 2 }}>
+                          One tap to send the distress message with live location & evidence link to everyone.
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: "0.7rem",
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          fontWeight: "bold",
+                          background: journeySosSentAllSuccess ? "#10b981" : "#ef4444",
+                          color: "#fff"
+                        }}
+                      >
+                        {journeySosSentAllSuccess ? "✅ ALL SUBMITTED" : "ONE-CLICK MULTI-SEND"}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={handleJourneySosSendAll}
+                        disabled={journeySosSendingAll || journeyContactList.length === 0}
+                        style={{
+                          background: journeySosSentAllSuccess ? "#059669" : "#ef4444",
+                          color: "#fff",
+                          fontWeight: 700,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "7px 14px",
+                          fontSize: "0.82rem",
+                          border: "none",
+                          cursor: (journeySosSendingAll || journeyContactList.length === 0) ? "not-allowed" : "pointer",
+                          boxShadow: "0 2px 6px rgba(239,68,68,0.3)"
+                        }}
+                      >
+                        {journeySosSendingAll ? "⏳ Dispatching to All..." : journeySosSentAllSuccess ? "⚡ Re-Send to All" : "⚡ Send to All Contacts"}
+                      </button>
+
+                      {journeyGroupSmsUrl && (
+                        <a
+                          href={journeyGroupSmsUrl}
+                          className="btn sm"
+                          style={{
+                            background: "#2563eb",
+                            color: "#fff",
+                            textDecoration: "none",
+                            fontSize: "0.82rem",
+                            fontWeight: 700,
+                            padding: "7px 12px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5
+                          }}
+                          title="Send via native device SMS to all numbers at once"
+                        >
+                          📱 Send All via SMS ({journeyCleanPhones.length})
+                        </a>
+                      )}
+
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={handleJourneySosSendAllWhatsApp}
+                        disabled={journeyContactList.length === 0}
+                        style={{
+                          background: "#25D366",
+                          color: "#fff",
+                          fontWeight: 700,
+                          fontSize: "0.82rem",
+                          padding: "7px 12px",
+                          border: "none",
+                          cursor: journeyContactList.length === 0 ? "not-allowed" : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5
+                        }}
+                        title="Open WhatsApp chat for each contact"
+                      >
+                        💬 Send All via WhatsApp
+                      </button>
+                    </div>
+
+                    {journeySosSendAllFeedback && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          padding: "7px 10px",
+                          borderRadius: 6,
+                          background: journeySosSendAllFeedback.type === "success" ? "rgba(16, 185, 129, 0.2)" : journeySosSendAllFeedback.type === "info" ? "rgba(59, 130, 246, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                          border: `1px solid ${journeySosSendAllFeedback.type === "success" ? "#10b981" : journeySosSendAllFeedback.type === "info" ? "#3b82f6" : "#ef4444"}`,
+                          color: journeySosSendAllFeedback.type === "success" ? "#34d399" : journeySosSendAllFeedback.type === "info" ? "#93c5fd" : "#fca5a5",
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6
+                        }}
+                      >
+                        {journeySosSendAllFeedback.type === "success" ? "✅" : journeySosSendAllFeedback.type === "info" ? "📲" : "⚠️"} {journeySosSendAllFeedback.message}
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="mut" style={{ fontSize: "0.82rem", margin: "0 0 10px", lineHeight: 1.4 }}>
+                    Emergency notifications with your exact live GPS link were automatically sent via server gateway to all your registered contacts. Direct backups:
+                  </p>
+
+                  {journeyContactList.length > 0 ? (
+                    journeyContactList.map((c) => {
+                      const name = c.name || "Emergency Contact";
+                      const phone = c.phone || "";
+                      const cleanP = (phone || "").replace(/\D/g, "");
+                      const dispatchStatus = c.dispatch_status || "unknown";
+                      const dispatchLabel = dispatchStatus === "provider_confirmed"
+                        ? "Delivered"
+                        : dispatchStatus === "submitted_to_provider"
+                        ? "Submitted to provider"
+                        : dispatchStatus === "demo_simulated"
+                        ? "Not sent (demo mode)"
+                        : dispatchStatus === "failed"
+                        ? "Failed"
+                        : dispatchStatus;
+                      const waUrl = c.wa_url || (cleanP ? `https://wa.me/${cleanP}?text=${journeySosText}` : null);
+                      const smsUrl = c.sms_url || (cleanP ? `sms:${cleanP}?body=${journeySosText}` : null);
+
+                      return (
+                        <div
+                          key={c.id || phone}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: journeySosSentAllSuccess ? "rgba(16, 185, 129, 0.14)" : "rgba(16, 185, 129, 0.08)",
+                            padding: "10px 14px",
+                            borderRadius: 8,
+                            marginBottom: 8,
+                            border: `1px solid ${journeySosSentAllSuccess ? "#10b981" : "rgba(16, 185, 129, 0.3)"}`,
+                            flexWrap: "wrap",
+                            gap: 8
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                              {name} {c.relationship ? <span className="mut" style={{ fontSize: "0.75rem", fontWeight: "normal" }}>({c.relationship})</span> : null}
+                              <span style={{
+                                fontSize: "0.7rem",
+                                background: dispatchStatus === "failed" || dispatchStatus === "demo_simulated" ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)",
+                                color: dispatchStatus === "failed" || dispatchStatus === "demo_simulated" ? "#fca5a5" : "#34d399",
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                fontWeight: "bold"
+                              }}>
+                                {dispatchLabel}
+                              </span>
+                            </div>
+                            <div className="mut" style={{ fontSize: "0.8rem", marginTop: 2 }}>{phone} &bull; <span style={{ color: dispatchStatus === "failed" || dispatchStatus === "demo_simulated" ? "#fca5a5" : "#34d399" }}>{dispatchLabel}</span></div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {waUrl && (
+                              <a
+                                href={waUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn sm"
+                                title="Optional backup WhatsApp message"
+                                style={{ background: "#25D366", color: "#fff", textDecoration: "none", fontSize: "0.8rem", padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                💬 WhatsApp
+                              </a>
+                            )}
+                            {smsUrl && (
+                              <a
+                                href={smsUrl}
+                                className="btn sm ghost"
+                                title="Optional backup device SMS"
+                                style={{ textDecoration: "none", fontSize: "0.8rem", padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                📱 SMS
+                              </a>
+                            )}
+                            {phone && (
+                              <a
+                                href={`tel:${phone}`}
+                                className="btn sm red"
+                                style={{ textDecoration: "none", fontSize: "0.8rem", padding: "5px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                              >
+                                📞 Direct Call
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ padding: "10px 14px", background: "rgba(245, 158, 11, 0.1)", border: "1px solid #f59e0b", borderRadius: 8, color: "#fcd34d", fontSize: "0.85rem" }}>
+                      ⚠️ No emergency contacts registered with SOS alerts enabled. Please add your trusted contacts in the Contacts module.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Emergency Helpline Direct Dials */}
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
@@ -2814,6 +3043,9 @@ export default function LiveJourneyGuardian() {
                 onClick={() => {
                   stopLoudSiren();
                   setSosResult(null);
+                  setJourneySosSendingAll(false);
+                  setJourneySosSendAllFeedback(null);
+                  setJourneySosSentAllSuccess(false);
                 }}
               >
                 Close Dialog (Keep Monitoring)
@@ -2824,6 +3056,9 @@ export default function LiveJourneyGuardian() {
                 style={{ background: "#10b981", color: "#fff", fontWeight: 700 }}
                 onClick={async () => {
                   stopLoudSiren();
+                  setJourneySosSendingAll(false);
+                  setJourneySosSendAllFeedback(null);
+                  setJourneySosSentAllSuccess(false);
                   try {
                     if (sosResult.sos?.id) {
                       await api(`/sos/${sosResult.sos.id}/resolve`, { method: "POST" });

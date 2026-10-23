@@ -59,6 +59,52 @@ def test_sos_shares_expiring_evidence_pdf_with_contacts(c, monkeypatch):
     invalid_response = c.get(urlsplit(pdf_url).path.rsplit("/", 1)[0] + "/invalid.pdf")
     assert invalid_response.status_code == 404
 
+def test_send_all_sos_dispatches_to_every_sos_contact(c, monkeypatch):
+    import app.routes.sos as sos_routes
+
+    headers = mk(c, "send-all@x.com", "9876543210")
+    for index, phone in enumerate(("9876543211", "9876543212")):
+        response = c.post("/api/contacts", json={
+            "name": f"Trusted Contact {index}",
+            "phone": phone,
+        }, headers=headers)
+        assert response.status_code == 201
+
+    sent_messages = []
+    monkeypatch.setattr(sos_routes, "send_sms", lambda phone, body: (
+        sent_messages.append((phone, body)) or {"status": "submitted_to_provider"}
+    ))
+    sos_response = c.post("/api/sos", json={"lat": 16.7, "lng": 74.2}, headers=headers)
+    sent_messages.clear()
+
+    response = c.post(f"/api/sos/{sos_response.json['sos']['id']}/send-all", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json["success"] is True
+    assert response.json["submitted_count"] == 2
+    assert {phone for phone, _ in sent_messages} == {"9876543211", "9876543212"}
+    assert all("Live Location:" in message for _, message in sent_messages)
+
+def test_send_all_sos_reports_demo_delivery_as_not_sent(c, monkeypatch):
+    import app.routes.sos as sos_routes
+
+    headers = mk(c, "send-demo@x.com", "9876543210")
+    c.post("/api/contacts", json={
+        "name": "Trusted Contact",
+        "phone": "9876543211",
+    }, headers=headers)
+    monkeypatch.setattr(sos_routes, "send_sms", lambda phone, body: (
+        {"status": "demo_simulated", "error": "provider not configured"}
+    ))
+    sos_response = c.post("/api/sos", json={"lat": 16.7, "lng": 74.2}, headers=headers)
+
+    response = c.post(f"/api/sos/{sos_response.json['sos']['id']}/send-all", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json["success"] is False
+    assert response.json["submitted_count"] == 0
+    assert "No real SMS was sent" in response.json["message"]
+
 def test_flexible_phone_and_casing_login(c):
     mk(c, "priya.sharma@example.com", "9876543210")
     # 1. Login with uppercase email

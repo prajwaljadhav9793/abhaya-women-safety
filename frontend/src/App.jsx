@@ -14,6 +14,9 @@ function Sos() {
   const isDashboard = location.pathname === "/dashboard";
   const [res, setRes] = useState(null), [busy, setBusy] = useState(false), [err, setErr] = useState("");
   const [alarmActive, setAlarmActive] = useState(false);
+  const [sendingAll, setSendingAll] = useState(false);
+  const [sendAllFeedback, setSendAllFeedback] = useState(null);
+  const [sentAllSuccess, setSentAllSuccess] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -36,6 +39,9 @@ function Sos() {
     setAlarmActive(false);
     setRes(null);
     setErr("");
+    setSendingAll(false);
+    setSendAllFeedback(null);
+    setSentAllSuccess(false);
   };
 
   // Real-time synchronization with Police CAD Dispatch while SOS modal is active
@@ -110,7 +116,83 @@ function Sos() {
     };
   }, [busy]);
 
+  const handleSendAll = async () => {
+    if (!res?.sos?.id || sendingAll) return;
+    setSendingAll(true);
+    setSendAllFeedback(null);
+
+    const contactList = (res.contacts && res.contacts.length > 0) ? res.contacts : (res.sos?.notifications || []);
+
+    try {
+      const result = await api(`/sos/${res.sos.id}/send-all`, { method: "POST" });
+      if (result?.sos) {
+        setRes((prev) => ({
+          ...prev,
+          sos: { ...prev.sos, ...result.sos },
+          contacts: result.contacts || prev.contacts
+        }));
+      } else if (result?.contacts) {
+        setRes((prev) => ({
+          ...prev,
+          contacts: result.contacts
+        }));
+      }
+
+      const submittedCount = result.submitted_count ?? (result.success ? contactList.length : 0);
+      setSentAllSuccess(Boolean(result.success));
+      setSendAllFeedback({
+        type: result.success ? "success" : "error",
+        message: result.message || `Emergency alerts submitted for ${submittedCount} of ${contactList.length} contacts.`
+      });
+    } catch (e) {
+      setSendAllFeedback({
+        type: "error",
+        message: e.message || "Failed to dispatch alerts to all contacts. Please try individual backup buttons."
+      });
+    } finally {
+      setSendingAll(false);
+    }
+  };
+
   const s = res?.sos;
+  const contactList = (res?.contacts && res.contacts.length > 0) ? res.contacts : (s?.notifications || []);
+  const locStr = s?.map_url || (s?.lat && s?.lng ? `https://www.google.com/maps?q=${s.lat},${s.lng}` : "Location unavailable");
+  const sosMessageText = `🚨 ABHAYA EMERGENCY SOS! I need immediate help! Live Location: ${locStr} ` +
+    (res?.evidence_pdf_url ? `SOS evidence PDF (link expires in 7 days): ${res.evidence_pdf_url}` : "");
+  const encodedSosMsg = encodeURIComponent(sosMessageText);
+
+  const cleanPhoneNumbers = contactList
+    .map((c) => (c.phone || c.recipient || "").replace(/\D/g, ""))
+    .filter(Boolean);
+
+  const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const groupSmsDelimiter = isIOS ? ";" : ",";
+  const groupSmsUrl = cleanPhoneNumbers.length > 0
+    ? `sms:${cleanPhoneNumbers.join(groupSmsDelimiter)}${isIOS ? "&" : "?"}body=${encodedSosMsg}`
+    : null;
+
+  const handleSendAllWhatsApp = () => {
+    if (!contactList.length) return;
+
+    setSendAllFeedback({
+      type: "info",
+      message: `📲 Launching WhatsApp for all ${contactList.length} contacts... (Please allow popups if prompted)`
+    });
+
+    contactList.forEach((c, idx) => {
+      const cleanP = (c.phone || c.recipient || "").replace(/\D/g, "");
+      let waNum = cleanP;
+      if (waNum.length === 10 && "6789".includes(waNum[0])) waNum = "91" + waNum;
+      else if (waNum.length === 11 && waNum.startsWith("0")) waNum = "91" + waNum.slice(1);
+      const url = c.wa_url || (waNum ? `https://wa.me/${waNum}?text=${encodedSosMsg}` : null);
+      if (url) {
+        setTimeout(() => {
+          window.open(url, `_blank_wa_${idx}`);
+        }, idx * 450);
+      }
+    });
+  };
+
   return <>
     <button
       className="sos"
@@ -345,22 +427,154 @@ function Sos() {
           )}
 
           <div style={{ marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <b style={{ color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <b style={{ color: "#fff", display: "flex", alignItems: "center", gap: 6, fontSize: "0.95rem" }}>
                 ⚡ All Emergency Contacts:
               </b>
-              <span className="badge b-verified" style={{ background: "#10b981", color: "#fff", fontSize: "0.75rem", padding: "2px 8px" }}>
-                {res.has_real_gateway ? "AUTO-DISPATCHED" : "REGISTERED"}
+              <span className="badge b-verified" style={{ background: (res.has_real_gateway || sentAllSuccess) ? "#10b981" : "#3b82f6", color: "#fff", fontSize: "0.75rem", padding: "2px 8px" }}>
+                {sentAllSuccess ? "SUBMITTED TO PROVIDER" : res.has_real_gateway ? "AUTO-DISPATCHED" : "REGISTERED"}
               </span>
             </div>
-            <p className="mut" style={{ fontSize: "0.85rem", margin: "4px 0 8px" }}>
-              Emergency alerts with your live coordinates were dispatched automatically by the ABHAYA emergency gateway. No manual action required. Optional direct backups below:
+
+            {/* Prominent Send All Contacts Action Card */}
+            <div
+              style={{
+                background: sentAllSuccess ? "rgba(16, 185, 129, 0.15)" : "linear-gradient(135deg, rgba(239, 68, 68, 0.16) 0%, rgba(185, 28, 28, 0.22) 100%)",
+                border: `1.5px solid ${sentAllSuccess ? "#10b981" : "#ef4444"}`,
+                borderRadius: 8,
+                padding: "12px 14px",
+                marginBottom: 12
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+                <div>
+                  <b style={{ color: sentAllSuccess ? "#34d399" : "#fff", fontSize: "0.9rem", display: "flex", alignItems: "center", gap: 6 }}>
+                    📢 Send SOS Alert to All Contacts ({contactList.length})
+                  </b>
+                  <div style={{ fontSize: "0.76rem", color: sentAllSuccess ? "#a7f3d0" : "#fca5a5", marginTop: 2 }}>
+                    One tap to send the distress message with live location & evidence link to everyone.
+                  </div>
+                </div>
+                <span
+                  style={{
+                    fontSize: "0.7rem",
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    fontWeight: "bold",
+                    background: sentAllSuccess ? "#10b981" : "#ef4444",
+                    color: "#fff"
+                  }}
+                >
+                  {sentAllSuccess ? "✅ ALL SUBMITTED" : "ONE-CLICK MULTI-SEND"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={handleSendAll}
+                  disabled={sendingAll || contactList.length === 0}
+                  style={{
+                    background: sentAllSuccess ? "#059669" : "#ef4444",
+                    color: "#fff",
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "7px 14px",
+                    fontSize: "0.82rem",
+                    border: "none",
+                    cursor: (sendingAll || contactList.length === 0) ? "not-allowed" : "pointer",
+                    boxShadow: "0 2px 6px rgba(239,68,68,0.3)"
+                  }}
+                >
+                  {sendingAll ? "⏳ Dispatching to All..." : sentAllSuccess ? "⚡ Re-Send to All" : "⚡ Send to All Contacts"}
+                </button>
+
+                {groupSmsUrl && (
+                  <a
+                    href={groupSmsUrl}
+                    className="btn sm"
+                    style={{
+                      background: "#2563eb",
+                      color: "#fff",
+                      textDecoration: "none",
+                      fontSize: "0.82rem",
+                      fontWeight: 700,
+                      padding: "7px 12px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5
+                    }}
+                    title="Send via native device SMS to all numbers at once"
+                  >
+                    📱 Send All via SMS ({cleanPhoneNumbers.length})
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={handleSendAllWhatsApp}
+                  disabled={contactList.length === 0}
+                  style={{
+                    background: "#25D366",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: "0.82rem",
+                    padding: "7px 12px",
+                    border: "none",
+                    cursor: contactList.length === 0 ? "not-allowed" : "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5
+                  }}
+                  title="Open WhatsApp chat for each contact"
+                >
+                  💬 Send All via WhatsApp
+                </button>
+              </div>
+
+              {sendAllFeedback && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: "7px 10px",
+                    borderRadius: 6,
+                    background: sendAllFeedback.type === "success" ? "rgba(16, 185, 129, 0.2)" : sendAllFeedback.type === "info" ? "rgba(59, 130, 246, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                    border: `1px solid ${sendAllFeedback.type === "success" ? "#10b981" : sendAllFeedback.type === "info" ? "#3b82f6" : "#ef4444"}`,
+                    color: sendAllFeedback.type === "success" ? "#34d399" : sendAllFeedback.type === "info" ? "#93c5fd" : "#fca5a5",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  {sendAllFeedback.type === "success" ? "✅" : sendAllFeedback.type === "info" ? "📲" : "⚠️"} {sendAllFeedback.message}
+                </div>
+              )}
+            </div>
+
+            <p className="mut" style={{ fontSize: "0.82rem", margin: "4px 0 8px" }}>
+              Emergency alerts with your live coordinates were dispatched automatically by the ABHAYA emergency gateway. Direct contact backups:
             </p>
-            {((res.contacts && res.contacts.length > 0) ? res.contacts : s.notifications).map(c => {
+            {contactList.map((c) => {
               const name = c.name || c.contact_name || "Emergency Contact";
               const phone = c.phone || c.recipient;
               const cleanP = (phone || "").replace(/\D/g, "");
-              const locStr = s.map_url || "Location unavailable";
+              const dispatchStatus = c.dispatch_status || "unknown";
+              const dispatchLabel = dispatchStatus === "provider_confirmed"
+                ? "Delivered"
+                : dispatchStatus === "submitted_to_provider"
+                ? "Submitted to provider"
+                : dispatchStatus === "demo_simulated"
+                ? "Not sent (demo mode)"
+                : dispatchStatus === "failed"
+                ? "Failed"
+                : dispatchStatus;
+              const locStr = s.map_url || (s.lat && s.lng ? `https://www.google.com/maps?q=${s.lat},${s.lng}` : "Location unavailable");
               const sosText = encodeURIComponent(
                 `🚨 ABHAYA EMERGENCY SOS! I need immediate help! Live Location: ${locStr} ` +
                 (res.evidence_pdf_url ? `SOS evidence PDF (link expires in 7 days): ${res.evidence_pdf_url}` : "")
@@ -369,25 +583,32 @@ function Sos() {
               const smsUrl = c.sms_url || (cleanP ? `sms:${cleanP}?body=${sosText}` : null);
 
               return (
-                <div key={c.id || phone} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(16, 185, 129, 0.08)", padding: "8px 12px", borderRadius: 6, marginBottom: 6, border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+                <div key={c.id || phone} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: sentAllSuccess ? "rgba(16, 185, 129, 0.14)" : "rgba(16, 185, 129, 0.08)", padding: "8px 12px", borderRadius: 6, marginBottom: 6, border: `1px solid ${sentAllSuccess ? "#10b981" : "rgba(16, 185, 129, 0.25)"}` }}>
                   <div>
                     <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       {name}
-                      <span style={{ fontSize: "0.7rem", background: "rgba(16, 185, 129, 0.2)", color: "#34d399", padding: "1px 6px", borderRadius: 4, fontWeight: "bold" }}>
-                        ⚡ Auto-Sent
+                      <span style={{
+                        fontSize: "0.7rem",
+                        background: dispatchStatus === "failed" || dispatchStatus === "demo_simulated" ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)",
+                        color: dispatchStatus === "failed" || dispatchStatus === "demo_simulated" ? "#fca5a5" : "#34d399",
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        fontWeight: "bold"
+                      }}>
+                        {dispatchLabel}
                       </span>
                     </div>
-                    <div className="mut" style={{ fontSize: "0.8rem", marginTop: 2 }}>{phone} &bull; <span style={{ color: "#34d399" }}>Delivered to Gateway</span></div>
+                    <div className="mut" style={{ fontSize: "0.8rem", marginTop: 2 }}>{phone} &bull; <span style={{ color: dispatchStatus === "failed" || dispatchStatus === "demo_simulated" ? "#fca5a5" : "#34d399" }}>{dispatchLabel}</span></div>
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     {waUrl && (
                       <a href={waUrl} target="_blank" rel="noreferrer" className="btn sm" style={{ background: "#25D366", color: "#fff", textDecoration: "none", fontSize: "0.8rem", padding: "4px 8px" }} title="Optional backup chat">
-                        💬 WhatsApp (Backup)
+                        💬 WhatsApp
                       </a>
                     )}
                     {smsUrl && (
                       <a href={smsUrl} className="btn sm ghost" style={{ textDecoration: "none", fontSize: "0.8rem", padding: "4px 8px" }} title="Optional backup SMS">
-                        📱 SMS (Backup)
+                        📱 SMS
                       </a>
                     )}
                     {cleanP && (
